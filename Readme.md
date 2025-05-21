@@ -7,11 +7,28 @@
 * then install requirements here
 ```pip install -r requirements.txt```
 
+## ASR models
+
 ```pip install useful-moonshine-onnx@git+https://git@github.com/usefulsensors/moonshine.git#subdirectory=moonshine-onnx```
 
 * also install piper
 * optionally install kokoro ```pip install kokoro```
 * optionally install nemo asr models: ```pip install "nemo_toolkit[asr]"```
+
+## Ollama
+
+* install ollama locally: https://ollama.com/download
+* then pull the model you want ot use, eg: 
+
+```ollama pull gemma3:1b```
+
+* then install [ollama python library](https://github.com/ollama/ollama-python) 
+
+```pip install ollama```
+
+## download NLTK sentence splitter
+
+* download sentence splitter: ```python -c "import nltk; nltk.download('punkt_tab')```
 
 # Run
 
