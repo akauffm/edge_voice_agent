@@ -7,7 +7,7 @@
 # 
 # python voice_agent.py \
 #   --system_prompt "You are an outdoor survival guide assistant helping users, who have no internet access, no phone access, and are far from civilization to deal with challenges they experience in the outdoors. Please give helpful advice, but be VERY brief. Only give details when asked." \
-#   --speaking-rate 3.0
+#   --speaking_rate 3.0
 
 
 from captioning_lib import captioning_utils
@@ -494,9 +494,9 @@ def main():
     parser.add_argument("--tts_engine", choices=['piper', 'kokoro'], default="piper", help="which tts engine to use; piper is much faster than kokoro.")
     parser.add_argument("--asr_model_name", default="moonshine_onnx_tiny", help="which asr model to run.")
     parser.add_argument("--tts_model_path", required=False, help="Path to the tts model (.onnx file)")
-    parser.add_argument("--speaking-rate", type=float, default=1.0, help="how fast should generated speech be, 1.0 is default, higher numbers mean faster speech")
+    parser.add_argument("--speaking_rate", type=float, default=1.0, help="how fast should generated speech be, 1.0 is default, higher numbers mean faster speech")
     parser.add_argument("--system_prompt", default=DEFAULT_SYSTEM_PROMPT, help="Instructions for the model.")
-    parser.add_argument("-end_of_utterance_duration", default=0.5, help="Silence seconds until end of turn of user identified")
+    parser.add_argument("--end_of_utterance_duration", type=float, default=0.5, help="Silence seconds until end of turn of user identified")
 
     parser.add_argument("--verbose", action="store_true", help="Verbose status info")
     

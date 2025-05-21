@@ -34,6 +34,7 @@
 
 ```python voice_agent.py \
   --system_prompt "You are an outdoor survival guide assistant helping users, who have no internet access, no phone access, and are far from civilization to deal with challenges they experience in the outdoors. Please give helpful advice, but be VERY brief. Only give details when asked." \
-  --speaking-rate 3.0
+  --speaking_rate 3.0 \
+  --end_of_utterance_duration 0.7
   ```
 
