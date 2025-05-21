@@ -32,9 +32,18 @@
 
 # Run
 
+## Survival Guide
+
 ```python voice_agent.py \
   --system_prompt "You are an outdoor survival guide assistant helping users, who have no internet access, no phone access, and are far from civilization to deal with challenges they experience in the outdoors. Please give helpful advice, but be VERY brief. Only give details when asked." \
-  --speaking_rate 3.0 \
+  --speaking_rate 2.0 \
   --end_of_utterance_duration 0.7
   ```
 
+## Configure system prompt from text
+
+```python voice_agent.py --speaking_rate 3.0 --system_prompt "`cat cat_specialist.txt`" ```
+
+## Other models
+
+```python voice_agent.py --asr_model_name moonshine_onnx_base --ollama-model-name gemma3:4b --speaking_rate 3.0```

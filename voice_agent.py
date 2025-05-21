@@ -38,12 +38,6 @@ import emoji
 
 DEFAULT_SYSTEM_PROMPT = """You are an assistant that runs on an edge device. Respond with a single, short sentence only."""
 
-# DEFAULT_SYSTEM_PROMPT = """You are an assistant that runs on an edge device. A person is interacting with you via voice. 
-# For that reason you should limit your answers a bit in length unless explicitly asked to give detailed responses. 
-# If you are asked for advise, list all relevant points but limit yourself to the top 3 items.
-# But most importantly, do not output any sort of formatting information.
-# Do not start your sentences with 'okay' always. Be friendly and helpful."""
-
 MAX_TEXT_BUFFER = 125
 MIN_TEXT_BUFFER = 75
 
