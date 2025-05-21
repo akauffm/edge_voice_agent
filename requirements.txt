@@ -1,0 +1,16 @@
+soundfile
+librosa
+numpy
+kokoro-onnx
+onnxruntime
+piper-phonemize-cross
+emoji
+nltk
+ollama
+
+pyaudio
+psutil
+rich
+silero_vad
+soundfile
+sounddevice
