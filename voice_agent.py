@@ -496,6 +496,7 @@ def main():
     parser.add_argument("--tts_model_path", required=False, help="Path to the tts model (.onnx file)")
     parser.add_argument("--speaking-rate", type=float, default=1.0, help="how fast should generated speech be, 1.0 is default, higher numbers mean faster speech")
     parser.add_argument("--system_prompt", default=DEFAULT_SYSTEM_PROMPT, help="Instructions for the model.")
+    parser.add_argument("-end_of_utterance_duration", default=0.5, help="Silence seconds until end of turn of user identified")
 
     parser.add_argument("--verbose", action="store_true", help="Verbose status info")
     
@@ -513,7 +514,7 @@ def main():
 
     user_input_reader = UserInputFromAudio(
         args.asr_model_name,
-        end_of_utterance_duration=0.3, verbose=args.verbose)
+        end_of_utterance_duration=0.5, verbose=args.verbose)
 
     
     try:
