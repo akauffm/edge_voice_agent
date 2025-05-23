@@ -74,4 +74,4 @@
 * moonshine base seems to run fast enough on Raspberry Pi.
 * Gemma3:4b leads to significant improvement on conversation side, but starts feeling slow
 
-```python voice_agent.py --asr_model_name moonshine_onnx_base --ollama-model-name gemma3:4b --speaking_rate 3.0```
+```python voice_agent.py --asr_model_name moonshine_onnx_base --ollama_model_name gemma3:4b --speaking_rate 3.0```

@@ -38,9 +38,6 @@ import emoji
 
 DEFAULT_SYSTEM_PROMPT = """You are an assistant that runs on an edge device. Respond with a single, short sentence only."""
 
-MAX_TEXT_BUFFER = 125
-MIN_TEXT_BUFFER = 75
-
 class ColoredPrinter(printers.CaptionPrinter):
 
     def __init__(self, title, title_color='blue'):
@@ -88,6 +85,8 @@ class OllamaToPiperStreamer:
                  tts_engine='piper',
                  speaking_rate=1.0, # higher numbers means faster
                  tts_model_path=None,
+                 max_words_to_speak_start=5,  # make sure that we get to speak quickly at the beginning
+                 max_words_to_speak=15, # later speak at last after this many words, or when a sentence is finished
                  verbose=False
                  ):
         """Initialize the streamer with Piper and Ollama models."""
@@ -114,6 +113,11 @@ class OllamaToPiperStreamer:
         self.messages = [
             {'role': 'system', 'content': system_prompt},
         ]
+
+        # configure TTS delay
+        self.max_words_to_speak_start = max_words_to_speak_start
+        self.max_words_to_speak = max_words_to_speak
+        assert self.max_words_to_speak_start <= self.max_words_to_speak
 
         # load TTS
         if tts_engine == 'piper':
@@ -159,7 +163,8 @@ class OllamaToPiperStreamer:
         # printer for output
         self.assistant_printer = ColoredPrinter("Assistant Output", "magenta")
     
-        # keyboard interruption
+        # marker for first words spoken
+        self.first_speech_fragment_finalized = False
 
     def _clean_llm_output(self, text):
         """
@@ -212,6 +217,16 @@ class OllamaToPiperStreamer:
             self.audio_stream.close()
             self.audio_stream = None
     
+    def _get_max_buffer_words_before_speaking(self):
+        # If unspoken text buffer is getting long until first sentence break observed, we will need to
+        # create a artificial break to ensure latency doesn't get too big.
+        # This is more critical at the beginning of a response, before we have started speaking, where
+        # the goal is to minimize time to speech onset.
+        if not self.first_speech_fragment_finalized:
+            return self.max_words_to_speak_start
+        else:
+            return self.max_words_to_speak
+
     def _process_text_chunk(self, text_chunk):
         """Process a chunk of text from Ollama, detecting complete sentences."""
         if self.stop_event.is_set():
@@ -222,6 +237,7 @@ class OllamaToPiperStreamer:
 
         with self.lock:
             self.text_buffer += text_chunk
+            self.text_buffer_words = self.text_buffer.split()
             
             # find complete sentences
             try:
@@ -231,15 +247,15 @@ class OllamaToPiperStreamer:
                     
                     # Keep the last (potentially incomplete) sentence in buffer
                     self.text_buffer = sentences[-1]
-                    
+
                     # Add complete sentences to the queue
                     for sentence in complete_sentences:
                         if sentence.strip():
                             self.sentence_queue.put(sentence)
-                            self._info(f"Queued: {sentence}")
-                
-                # If buffer is getting long but no sentence breaks, force process
-                elif len(self.text_buffer) > MAX_TEXT_BUFFER:
+                            self._info(f"Queued full sentence: {sentence}")
+                            self.first_speech_fragment_finalized = True
+
+                elif len(self.text_buffer_words) > self._get_max_buffer_words_before_speaking():
                     # Look for natural break points
                     break_points = [
                         self.text_buffer.rfind(', '),
@@ -251,12 +267,12 @@ class OllamaToPiperStreamer:
                     # Find the best break point
                     break_point = max(break_points)
                     
-                    if break_point > MIN_TEXT_BUFFER:  # Ensure we're not breaking too early
-                        fragment = self.text_buffer[:break_point+1]
-                        self.text_buffer = self.text_buffer[break_point+1:]
-                        self.sentence_queue.put(fragment)
-                        self._info(f"Forced break: {fragment}")
-            
+                    fragment = self.text_buffer[:break_point+1]
+                    self.text_buffer = self.text_buffer[break_point+1:]
+                    self.sentence_queue.put(fragment)
+                    self._info(f"Queued fragment: {fragment}")
+                    self.first_speech_fragment_finalized = True
+
             except Exception as e:
                 print(f"Error in sentence detection: {e}")
         
@@ -333,10 +349,20 @@ class OllamaToPiperStreamer:
         # Give a moment for audio to finish playing
         time.sleep(0.5)
     
+    def _show_idle(self, text=None):
+        spinner_symbol = random.choice(['+', 'o'])
+        idle_msg = spinner_symbol
+        if text:
+            idle_msg = text
+        self.assistant_printer.print(idle_msg, partial=True)
+
+
     def process_prompt(self, user_prompt):
         """Process a prompt through Ollama and stream to Piper."""
 
+        # reset
         self.assistant_printer.start()
+        self.first_speech_fragment_finalized = False
 
         self.messages.append({'role': 'user', 'content': user_prompt})
 
@@ -345,6 +371,8 @@ class OllamaToPiperStreamer:
 
         pretty_json = json.dumps(self.messages, indent=2)
         self._info(f">> Sending prompt to {self.ollama_model_name}: {pretty_json}")
+
+        self._show_idle('thinking...')
 
         response = ollama.chat(
             model=self.ollama_model_name,
@@ -363,16 +391,13 @@ class OllamaToPiperStreamer:
             if chunk and 'message' in chunk and 'content' in chunk['message']:
                 text_chunk = chunk['message']['content']
 
+                self._show_idle()
 
                 # remove asterisks and other formatting info from the text
                 text_chunk = self._clean_llm_output(text_chunk)
 
                 self._process_text_chunk(text_chunk)            
                 text_chunks.append(text_chunk)
-
-                # show some activity until all output is produced
-                spinner_symbol = random.choice(['+', 'o'])
-                self.assistant_printer.print(spinner_symbol, partial=True)
 
         assistant_response = ''.join(text_chunks)
         self.messages.append({'role': 'assistant', 'content': assistant_response})
@@ -484,11 +509,13 @@ class UserInputFromAudio:
 def main():
     """Main function to run the Ollama to Piper streamer."""
     parser = argparse.ArgumentParser(description="Stream text from Ollama to Piper TTS")
-    parser.add_argument("--ollama-model-name", default="gemma3:1b", help="Ollama model to use (default: llama3)")
+    parser.add_argument("--ollama_model_name", default="gemma3:1b", help="Ollama model to use (default: llama3)")
     parser.add_argument("--tts_engine", choices=['piper', 'kokoro'], default="piper", help="which tts engine to use; piper is much faster than kokoro.")
     parser.add_argument("--asr_model_name", default="moonshine_onnx_tiny", help="which asr model to run.")
     parser.add_argument("--tts_model_path", required=False, help="Path to the tts model (.onnx file)")
     parser.add_argument("--speaking_rate", type=float, default=1.0, help="how fast should generated speech be, 1.0 is default, higher numbers mean faster speech")
+    parser.add_argument("--max_words_to_speak_start", type=int, default=5, help="maximum number of words to speech onset after a prompt; reduce if latency too high.")
+    parser.add_argument("--max_words_to_speak", type=float, default=20, help="always produce speech after this many words were produced ignoring sentence boundaries.")        
     parser.add_argument("--system_prompt", default=DEFAULT_SYSTEM_PROMPT, help="Instructions for the model.")
     parser.add_argument("--end_of_utterance_duration", type=float, default=0.5, help="Silence seconds until end of turn of user identified")
 
@@ -503,6 +530,8 @@ def main():
         tts_engine=args.tts_engine,
         speaking_rate=args.speaking_rate,
         tts_model_path=args.tts_model_path,
+        max_words_to_speak_start=args.max_words_to_speak_start,
+        max_words_to_speak=args.max_words_to_speak,
         verbose=args.verbose
     )
 
