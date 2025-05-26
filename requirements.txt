@@ -7,7 +7,6 @@ piper-phonemize-cross
 emoji
 nltk
 ollama
-
 pyaudio
 psutil
 rich

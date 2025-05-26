@@ -3,8 +3,7 @@
 # Uses Ollama for on-devive LLMs. Supports several on-device runnable tts-engines and asr models.
 # Defaults are set for smallest models so that it can run on edge devices like Raspberry Pi 5.
 #
-# Example for an outdoor survival guide:
-# 
+# Usage Example:
 # python voice_agent.py \
 #   --system_prompt "You are an outdoor survival guide assistant helping users, who have no internet access, no phone access, and are far from civilization to deal with challenges they experience in the outdoors. Please give helpful advice, but be VERY brief. Only give details when asked." \
 #   --speaking_rate 3.0
@@ -166,6 +165,10 @@ class OllamaToPiperStreamer:
         # marker for first words spoken
         self.first_speech_fragment_finalized = False
 
+        self.time_llm_gen_started = time.time()
+        self.first_chunk_emitted = False
+
+
     def _clean_llm_output(self, text):
         """
         Remove formatting symbols.
@@ -253,6 +256,9 @@ class OllamaToPiperStreamer:
                         if sentence.strip():
                             self.sentence_queue.put(sentence)
                             self._info(f"Queued full sentence: {sentence}")
+                            if not self.first_speech_fragment_finalized:
+                                self.time_to_first_speech_fragment = time.time() - self.time_llm_gen_started 
+                                self._info(f"Time to first speech fragment (organic): {self.time_to_first_speech_fragment}")
                             self.first_speech_fragment_finalized = True
 
                 elif len(self.text_buffer_words) > self._get_max_buffer_words_before_speaking():
@@ -271,6 +277,10 @@ class OllamaToPiperStreamer:
                     self.text_buffer = self.text_buffer[break_point+1:]
                     self.sentence_queue.put(fragment)
                     self._info(f"Queued fragment: {fragment}")
+                    if not self.first_speech_fragment_finalized:
+                        self.time_to_first_speech_fragment = time.time() - self.time_llm_gen_started 
+                        self._info(f"Time to first speech fragment (forced): {self.time_to_first_speech_fragment}")
+
                     self.first_speech_fragment_finalized = True
 
             except Exception as e:
@@ -374,16 +384,21 @@ class OllamaToPiperStreamer:
 
         self._show_idle('thinking...')
 
+        self.time_llm_gen_started = time.time()
+        self.first_chunk_emitted = False
+
         response = ollama.chat(
             model=self.ollama_model_name,
             messages=self.messages,
             stream=True,
             options=self.ollama_options
         )
-        
-
         text_chunks = []
         for chunk in response:
+            if not self.first_chunk_emitted:
+                self.first_chunk_emitted = True
+                self.time_to_first_token = time.time() - self.time_llm_gen_started
+                self._info(f">> First chunk took {self.time_to_first_token:.2f} seconds")
 
             if self.stop_event.is_set():
                 break
