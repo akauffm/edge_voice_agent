@@ -21,7 +21,6 @@ import nltk
 from nltk.tokenize import sent_tokenize
 import time
 import threading
-import argparse
 import queue
 import signal
 import sys
@@ -34,8 +33,6 @@ except LookupError:
 import re
 import emoji
 
-
-DEFAULT_SYSTEM_PROMPT = """You are an assistant that runs on an edge device. Respond with a single, short sentence only."""
 
 class ColoredPrinter(printers.CaptionPrinter):
 
@@ -76,8 +73,19 @@ class ColoredPrinter(printers.CaptionPrinter):
             syle = "segment"
             self.console.print(text, style=syle) # Print the styled text without adding a new line
 
+    def show_idle(self, text=None):
+        spinner_symbol = random.choice(['+', 'o'])
+        idle_msg = spinner_symbol
+        if text:
+            idle_msg = text
+        self.print(idle_msg, partial=True)
 
-class OllamaToPiperStreamer:
+
+class LLmToAudio:
+    """Generate LLM output based on prompt and stream into TTS output."""
+
+    DEFAULT_SYSTEM_PROMPT = """You are an assistant that runs on an edge device. Respond with a single, short sentence only."""
+
     def __init__(self, 
                  ollama_model_name="gemma3:1b", 
                  system_prompt=DEFAULT_SYSTEM_PROMPT,
@@ -159,6 +167,9 @@ class OllamaToPiperStreamer:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
+        # increase buffer size if needed, esp on slower devices like raspberry pi
+        self.audio_buffer_size = 2048
+
         # printer for output
         self.assistant_printer = ColoredPrinter("Assistant Output", "magenta")
     
@@ -171,7 +182,7 @@ class OllamaToPiperStreamer:
 
     def _clean_llm_output(self, text):
         """
-        Remove formatting symbols.
+        Remove formatting symbols we don't want to be spoken.
         """
         text = text.replace('*', ' ')
         text = emoji.replace_emoji(text, replace='')
@@ -185,19 +196,16 @@ class OllamaToPiperStreamer:
         """Handle termination signals gracefully."""
         self._info("\nReceived termination signal. Shutting down...")
         self.stop_event.set()
-        self._close()
+        self.shutdown()
         sys.exit(0)
     
     def _start_audio_stream(self):
         """Initialize and start the audio output stream."""
 
-        # increase buffer size if needed, esp on slower devices like raspberry pi
-        buffer_size = 1024
-
         if self.audio_stream is None:
             self.audio_stream = sd.OutputStream(
                 samplerate=self.sample_rate,
-                blocksize=buffer_size,
+                blocksize=self.audio_buffer_size,
                 channels=1,
                 dtype='int16'
             )
@@ -211,15 +219,7 @@ class OllamaToPiperStreamer:
             
         self.is_processing = True
         threading.Thread(target=self._process_sentences, daemon=True).start()
-    
-    def _close(self):
-        """Close all resources."""
-        if self.audio_stream:
-            self._info("Closing audio stream...")
-            self.audio_stream.stop()
-            self.audio_stream.close()
-            self.audio_stream = None
-    
+        
     def _get_max_buffer_words_before_speaking(self):
         # If unspoken text buffer is getting long until first sentence break observed, we will need to
         # create a artificial break to ensure latency doesn't get too big.
@@ -231,7 +231,9 @@ class OllamaToPiperStreamer:
             return self.max_words_to_speak
 
     def _process_text_chunk(self, text_chunk):
-        """Process a chunk of text from Ollama, detecting complete sentences."""
+        """Process a chunk of text from Ollama.
+        
+        Decide when to put in the speak queue based on sentence end detection on max chunk size."""
         if self.stop_event.is_set():
             return
             
@@ -325,7 +327,7 @@ class OllamaToPiperStreamer:
                 self._start_sentence_processor()
     
     def _speak_sentence(self, text, speed=1.0, noise_scale=0.667, noise_w=0.8):
-        """Synthesize and play a sentence with Piper."""
+        """Synthesize and play a sentence with TTS model."""
         if not text.strip():
             return
 
@@ -333,9 +335,12 @@ class OllamaToPiperStreamer:
         self._info(f"Speaking: {text}")
         
         try:
+            # synthesize
             audio_data, sample_rate = self.tts.synthesize(
                 text, target_sr = self.sample_rate, 
                 speaking_rate=speed, return_as_int16=True)
+
+            # play
             self.audio_stream.write(audio_data)
 
         except Exception as e:
@@ -343,7 +348,7 @@ class OllamaToPiperStreamer:
         
         finally:
             self.is_speaking = False
-    
+
     def _finish_processing(self):
         """Process any remaining text in the buffer."""
         with self.lock:
@@ -359,34 +364,36 @@ class OllamaToPiperStreamer:
         # Give a moment for audio to finish playing
         time.sleep(0.5)
     
-    def _show_idle(self, text=None):
-        spinner_symbol = random.choice(['+', 'o'])
-        idle_msg = spinner_symbol
-        if text:
-            idle_msg = text
-        self.assistant_printer.print(idle_msg, partial=True)
-
+    def shutdown(self):
+        """Close all resources."""
+        if self.audio_stream:
+            self._info("Closing audio stream...")
+            self.audio_stream.stop()
+            self.audio_stream.close()
+            self.audio_stream = None
 
     def process_prompt(self, user_prompt):
         """Process a prompt through Ollama and stream to Piper."""
 
-        # reset
-        self.assistant_printer.start()
-        self.first_speech_fragment_finalized = False
-
         self.messages.append({'role': 'user', 'content': user_prompt})
 
-        self._info(f">> context length: turns: {len(self.messages) / 2}")
-        self._info(f">> context length: characters: {len(json.dumps(self.messages))}")
+        if self.verbose:
+            self._info(f">> context length: turns: {len(self.messages) / 2}")
+            self._info(f">> context length: characters: {len(json.dumps(self.messages))}")
 
-        pretty_json = json.dumps(self.messages, indent=2)
-        self._info(f">> Sending prompt to {self.ollama_model_name}: {pretty_json}")
+            pretty_json = json.dumps(self.messages, indent=2)
+            self._info(f">> Sending prompt to {self.ollama_model_name}: {pretty_json}")
 
-        self._show_idle('thinking...')
 
+        # reset
+        self.assistant_printer.start()
+        self.assistant_printer.show_idle('thinking...')
+
+        self.first_speech_fragment_finalized = False
         self.time_llm_gen_started = time.time()
         self.first_chunk_emitted = False
 
+        # get and stream Ollama response to prompt
         response = ollama.chat(
             model=self.ollama_model_name,
             messages=self.messages,
@@ -406,7 +413,7 @@ class OllamaToPiperStreamer:
             if chunk and 'message' in chunk and 'content' in chunk['message']:
                 text_chunk = chunk['message']['content']
 
-                self._show_idle()
+                self.assistant_printer.show_idle()
 
                 # remove asterisks and other formatting info from the text
                 text_chunk = self._clean_llm_output(text_chunk)
@@ -424,12 +431,13 @@ class OllamaToPiperStreamer:
         self._finish_processing()
             
 
-class UserInputFromAudio:
+class AudioToText:
+    """Stream from audio and transcribe."""
+
     def __init__(self, asr_model_name,
                  end_of_utterance_duration=0.5, 
                  min_partial_duration=0.2, max_segment_duration=15,
                  verbose=False):
-
         self.verbose = verbose
         self.end_of_utterance_duration = end_of_utterance_duration
         
@@ -521,60 +529,35 @@ class UserInputFromAudio:
         return all_transcribed
 
 
-def main():
-    """Main function to run the Ollama to Piper streamer."""
-    parser = argparse.ArgumentParser(description="Stream text from Ollama to Piper TTS")
-    parser.add_argument("--ollama_model_name", default="gemma3:1b", help="Ollama model to use (default: llama3)")
-    parser.add_argument("--tts_engine", choices=['piper', 'kokoro'], default="piper", help="which tts engine to use; piper is much faster than kokoro.")
-    parser.add_argument("--asr_model_name", default="moonshine_onnx_tiny", help="which asr model to run.")
-    parser.add_argument("--tts_model_path", required=False, help="Path to the tts model (.onnx file)")
-    parser.add_argument("--speaking_rate", type=float, default=1.0, help="how fast should generated speech be, 1.0 is default, higher numbers mean faster speech")
-    parser.add_argument("--max_words_to_speak_start", type=int, default=5, help="maximum number of words to speech onset after a prompt; reduce if latency too high.")
-    parser.add_argument("--max_words_to_speak", type=float, default=20, help="always produce speech after this many words were produced ignoring sentence boundaries.")        
-    parser.add_argument("--system_prompt", default=DEFAULT_SYSTEM_PROMPT, help="Instructions for the model.")
-    parser.add_argument("--end_of_utterance_duration", type=float, default=0.5, help="Silence seconds until end of turn of user identified")
+class VoiceAgent():
 
-    parser.add_argument("--verbose", action="store_true", help="Verbose status info")
-    
-    args = parser.parse_args()
-    
-
-    streamer = OllamaToPiperStreamer(
-        ollama_model_name=args.ollama_model_name,
-        system_prompt=args.system_prompt,
-        tts_engine=args.tts_engine,
-        speaking_rate=args.speaking_rate,
-        tts_model_path=args.tts_model_path,
-        max_words_to_speak_start=args.max_words_to_speak_start,
-        max_words_to_speak=args.max_words_to_speak,
-        verbose=args.verbose
-    )
-
-    user_input_reader = UserInputFromAudio(
-        args.asr_model_name,
-        end_of_utterance_duration=0.5, verbose=args.verbose)
-
-    
-    try:
-            
-        while True:
-            user_input_transcribed = user_input_reader.get_speech_input()
-
-            prompt = user_input_transcribed
-            if 'please exit' in prompt.lower():
-                streamer._speak_sentence('Goodbye, then!')
-                break
-            
-            if prompt:
-                streamer.process_prompt(prompt)
-
-            #streamer.user_interrupt_event = None
-            
-    finally:
-        user_input_reader.shutdown()
-        streamer._close()
+    GOODBYE_MESSAGE = 'Goodbye then!'
+    EXIT_COMMAND = 'please exit'
 
 
+    def __init__(self):
+        pass
 
-if __name__ == "__main__":
-    main()
+    def init_AudioToText(self, **audioToTextKwargs):
+        self.input_handler = AudioToText(**audioToTextKwargs)
+
+    def init_LLmToAudioOutput(self, **llmToAudiOutputArgsKwargs):
+        self.output_handler = LLmToAudio(**llmToAudiOutputArgsKwargs)
+
+    def run(self):
+        try:
+            while True:
+
+                user_input_transcribed = self.input_handler.get_speech_input()
+                if not user_input_transcribed:
+                    continue
+
+                if self.EXIT_COMMAND.lower() in user_input_transcribed.lower():
+                    self.output_handler._speak_sentence(self.GOODBYE_MESSAGE)
+                    break
+                else:
+                    self.output_handler.process_prompt(user_input_transcribed)     
+        finally:
+            self.input_handler.shutdown()
+            self.output_handler.shutdown()
+
