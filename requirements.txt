@@ -13,3 +13,4 @@ rich
 silero_vad
 soundfile
 sounddevice
+customtkinter

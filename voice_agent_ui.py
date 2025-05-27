@@ -1,0 +1,284 @@
+# UI based on customtkinter.
+# default settings meant to be run on tiny screen (Raspberry Pi)
+import customtkinter as ctk
+import threading
+import time
+from voice_agent import VoiceAgent, LLmToAudio, AudioToText
+
+class UITextPrinter:
+    """Custom printer that updates the UI textbox instead of console"""
+    
+    def __init__(self, textbox, title=None, clear_on_start=True):
+        self.textbox = textbox
+        self.title = title
+        self.clear_on_start = clear_on_start
+        
+    def start(self):
+        if self.clear_on_start:
+            self.textbox.delete("1.0", "end")
+        if self.title:
+            self.textbox.insert("end", f"--- {self.title} ---\n")
+        
+        # Add an empty line for partial updates
+        self.textbox.insert("end", "\n")
+    
+    def stop(self):
+        self.textbox.insert("end", "\n")
+    
+    def print(self, transcript, duration=None, partial=False):
+        # Always replace the current content of the last line
+        last_line_start = self.textbox.index("end-1l linestart")
+        self.textbox.delete(last_line_start, "end")
+        
+        if partial:
+            # For partial transcripts, don't add a newline
+            self.textbox.insert("end", transcript)
+        else:
+            # For complete transcripts, add a newline after and prepare a new line for future partials
+            self.textbox.insert("end", f"{transcript}\n\n")
+        
+        self.textbox.see("end")  # Auto-scroll to the end
+    
+    def show_idle(self, text=None):
+        # Make sure we always have a line to update
+        if self.textbox.index("end-1c") == "1.0":  # If textbox is empty
+            self.textbox.insert("end", "\n")
+            
+        idle_msg = "..." if text is None else text
+        self.print(idle_msg, partial=True)
+
+class VoiceAgentApp:
+    def __init__(self, 
+                 # UI configuration
+                 window_size="480x320",
+                 fullscreen=True,
+                 label_font_size=14,
+                 textbox_font_size=14,
+                 button_font_size=16,
+                 appearance_mode="dark",
+                 color_theme="blue",
+                 
+                 # Voice agent configuration
+                 ollama_model_name="gemma3:1b",
+                 tts_engine="piper",
+                 asr_model_name="moonshine_onnx_tiny",
+                 tts_model_path=None,
+                 speaking_rate=1.0,
+                 max_words_to_speak_start=5,
+                 max_words_to_speak=20,
+                 system_prompt=LLmToAudio.DEFAULT_SYSTEM_PROMPT,
+                 end_of_utterance_duration=0.5,
+                 verbose=False):
+                 
+        # Voice agent config
+        self.ollama_model_name = ollama_model_name
+        self.tts_engine = tts_engine
+        self.asr_model_name = asr_model_name
+        self.tts_model_path = tts_model_path
+        self.speaking_rate = speaking_rate
+        self.max_words_to_speak_start = max_words_to_speak_start
+        self.max_words_to_speak = max_words_to_speak
+        self.system_prompt = system_prompt
+        self.end_of_utterance_duration = end_of_utterance_duration
+        self.verbose = verbose
+        
+        # UI config
+        self.window_size = window_size
+        self.fullscreen = fullscreen
+        self.label_font_size = label_font_size
+        self.textbox_font_size = textbox_font_size
+        self.button_font_size = button_font_size
+        
+        # Initialize the main window
+        self.root = ctk.CTk()
+        self.root.title("Voice Agent UI")
+        
+        # Set window size and fullscreen
+        self.root.geometry(self.window_size)
+        if self.fullscreen:
+            self.root.attributes("-fullscreen", True)
+        self.root.resizable(False, False)
+        
+        # Set appearance mode and color theme
+        ctk.set_appearance_mode(appearance_mode)
+        ctk.set_default_color_theme(color_theme)
+        
+        # Track running state
+        self.is_running = False
+        self.agent_thread = None
+        self.stop_event = threading.Event()
+        
+        # Create the UI
+        self.create_widgets()
+        
+        # Bind escape key to exit fullscreen
+        self.root.bind("<Escape>", self.exit_fullscreen)
+        
+    def create_widgets(self):
+        # Main container frame
+        main_frame = ctk.CTkFrame(self.root)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # User input section
+        user_label = ctk.CTkLabel(
+            main_frame, 
+            text="User Input", 
+            font=("Arial", self.label_font_size, "bold")
+        )
+        user_label.pack(pady=(5, 2))
+        
+        self.user_input = ctk.CTkTextbox(
+            main_frame,
+            font=("Arial", self.textbox_font_size),
+            wrap="word"
+        )
+        self.user_input.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        
+        # Agent output section
+        agent_label = ctk.CTkLabel(
+            main_frame, 
+            text="Agent Output", 
+            font=("Arial", self.label_font_size, "bold")
+        )
+        agent_label.pack(pady=(5, 2))
+        
+        self.agent_output = ctk.CTkTextbox(
+            main_frame,
+            font=("Arial", self.textbox_font_size),
+            wrap="word"
+        )
+        self.agent_output.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        
+        # Run/Stop button at the bottom
+        self.run_button = ctk.CTkButton(
+            main_frame,
+            text="Run",
+            font=("Arial", self.button_font_size, "bold"),
+            height=40,
+            command=self.toggle_run
+        )
+        self.run_button.pack(pady=(5, 5))
+        
+    def toggle_run(self):
+        if not self.is_running:
+            self.start_agent()
+        else:
+            self.stop_agent()
+    
+    def start_agent(self):
+        self.is_running = True
+        self.run_button.configure(text="Stop")
+        self.stop_event.clear()
+        
+        # Clear textboxes and initialize with starting content
+        self.user_input.delete("1.0", "end")
+        self.user_input.insert("end", "--- User Input ---\n\n")
+        
+        self.agent_output.delete("1.0", "end")
+        self.agent_output.insert("end", "--- Assistant Output ---\n\n")
+        
+        # Start the agent in a separate thread
+        self.agent_thread = threading.Thread(target=self.run_agent)
+        self.agent_thread.daemon = True
+        self.agent_thread.start()
+    
+    def stop_agent(self):
+        if self.is_running:
+            self.is_running = False
+            self.run_button.configure(text="Run")
+            self.stop_event.set()
+            
+            # Update UI to show stopping
+            self.agent_output.insert("end", "\nStopping agent...\n")
+            
+            # Give the thread a moment to clean up
+            if self.agent_thread and self.agent_thread.is_alive():
+                self.agent_thread.join(timeout=2.0)
+    
+    def run_agent(self):
+        va = None
+        try:
+            # Initialize voice agent
+            va = VoiceAgent()
+            
+            # Create custom UI printers for input and output
+            # Don't add titles since we already added them in start_agent
+            user_printer = UITextPrinter(self.user_input, title=None, clear_on_start=False)
+            agent_printer = UITextPrinter(self.agent_output, title=None, clear_on_start=False)
+            
+            # Initialize the agent components with our UI printers
+            va.init_LLmToAudioOutput(
+                ollama_model_name=self.ollama_model_name,
+                system_prompt=self.system_prompt,
+                tts_engine=self.tts_engine,
+                speaking_rate=self.speaking_rate,
+                tts_model_path=self.tts_model_path,
+                max_words_to_speak_start=self.max_words_to_speak_start,
+                max_words_to_speak=self.max_words_to_speak,
+                verbose=self.verbose,
+                printer=agent_printer
+            )
+
+            va.init_AudioToText(
+                asr_model_name=self.asr_model_name,
+                end_of_utterance_duration=self.end_of_utterance_duration,
+                verbose=self.verbose,
+                printer=user_printer
+            )
+
+            # Connect our UI stop event to the agent components
+            va.input_handler.stop_threads = self.stop_event
+            va.output_handler.stop_event = self.stop_event
+
+            # Run the agent (this will loop until stopped)
+            va.run()
+            
+        except Exception as e:
+            # Log exception to the UI
+            error_msg = str(e)
+            print(f"Agent error: {error_msg}")
+            self.root.after(0, lambda: self.agent_output.insert("end", f"\nError: {error_msg}\n"))
+        finally:
+            # Clean up resources
+            if va:
+                if hasattr(va, 'input_handler'):
+                    try:
+                        va.input_handler.shutdown()
+                    except Exception as e:
+                        print(f"Error shutting down input handler: {e}")
+                        
+                if hasattr(va, 'output_handler'):
+                    try:
+                        va.output_handler.shutdown()
+                    except Exception as e:
+                        print(f"Error shutting down output handler: {e}")
+            
+            # Update UI state if not already stopped by the user
+            if self.is_running:
+                self.root.after(0, self.update_ui_after_stop)
+    
+    def update_ui_after_stop(self):
+        self.is_running = False
+        self.run_button.configure(text="Run")
+    
+    def exit_fullscreen(self, event=None):
+        """Exit fullscreen mode when Escape is pressed"""
+        self.root.attributes("-fullscreen", False)
+        self.root.geometry(self.window_size)
+    
+    def run(self):
+        self.root.mainloop()
+        # Ensure we stop the agent when closing the window
+        self.stop_agent()
+
+# Create and run the application
+if __name__ == "__main__":
+    app = VoiceAgentApp(
+        # UI configuration
+        window_size="800x480",        # Larger default window size
+        fullscreen=True,              # Start in fullscreen mode
+        label_font_size=18,           # Larger label font
+        textbox_font_size=24,         # Much larger text for readability
+        button_font_size=20,          # Larger button text
+    )
+    app.run()

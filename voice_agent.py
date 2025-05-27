@@ -94,7 +94,8 @@ class LLmToAudio:
                  tts_model_path=None,
                  max_words_to_speak_start=5,  # make sure that we get to speak quickly at the beginning
                  max_words_to_speak=15, # later speak at last after this many words, or when a sentence is finished
-                 verbose=False
+                 verbose=False,
+                 printer=None
                  ):
         """Initialize the streamer with Piper and Ollama models."""
         self.verbose = verbose
@@ -163,15 +164,19 @@ class LLmToAudio:
         # Create stop event for clean termination
         self.stop_event = threading.Event()
         
-        # Set up signal handlers for graceful shutdown
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        # Set up signal handlers for graceful shutdown, but only in the main thread
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self._signal_handler)
+            signal.signal(signal.SIGTERM, self._signal_handler)
 
         # increase buffer size if needed, esp on slower devices like raspberry pi
         self.audio_buffer_size = 2048
 
         # printer for output
-        self.assistant_printer = ColoredPrinter("Assistant Output", "magenta")
+        if not printer:
+            self.assistant_printer = ColoredPrinter("Assistant Output", "magenta")
+        else:
+            self.assistant_printer = printer
     
         # marker for first words spoken
         self.first_speech_fragment_finalized = False
@@ -437,14 +442,18 @@ class AudioToText:
     def __init__(self, asr_model_name,
                  end_of_utterance_duration=0.5, 
                  min_partial_duration=0.2, max_segment_duration=15,
-                 verbose=False):
+                 verbose=False,
+                printer=None):
         self.verbose = verbose
         self.end_of_utterance_duration = end_of_utterance_duration
         
         self.min_partial_duration = min_partial_duration
         self.max_segment_duration = max_segment_duration
         
-        self.caption_printer = ColoredPrinter("User Input", "blue")
+        if not printer:
+            self.caption_printer = ColoredPrinter("User Input", "blue")
+        else:
+            self.caption_printer = printer
         
         self.audio_queue = queue.Queue(maxsize=1000)
         self.vad = captioning_utils.get_vad(eos_min_silence=200)    
@@ -510,8 +519,8 @@ class AudioToText:
             all_transcribed = ''
             if not self.transcription_handler.is_speech_recording:
                 if not self.transcription_handler.had_speech:
-                    # wait until user spoke
-                    self.caption_printer.print("please speak", partial=True)
+                    # wait until user spoke - make this message more visible
+                    self.caption_printer.print("Please speak now...", partial=True)
                 else:
                     # define EOU when we haven't seen speech for a while
                     if self.transcription_handler.time_since_last_speech() > self.end_of_utterance_duration:
@@ -547,8 +556,16 @@ class VoiceAgent():
     def run(self):
         try:
             while True:
-
+                # Check if we need to stop before starting to listen
+                if self.input_handler.stop_threads.is_set() or self.output_handler.stop_event.is_set():
+                    break
+                    
                 user_input_transcribed = self.input_handler.get_speech_input()
+                
+                # Check again after listening (might have been stopped during listening)
+                if self.input_handler.stop_threads.is_set() or self.output_handler.stop_event.is_set():
+                    break
+                    
                 if not user_input_transcribed:
                     continue
 
