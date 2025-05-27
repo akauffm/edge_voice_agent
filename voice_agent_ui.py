@@ -114,6 +114,33 @@ class VoiceAgentApp:
         # Bind escape key to exit fullscreen
         self.root.bind("<Escape>", self.exit_fullscreen)
         
+        # Initialize VoiceAgent and its components once at startup
+        self.voice_agent = VoiceAgent()
+        
+        # Create custom UI printers for input and output
+        self.user_printer = UITextPrinter(self.user_input, title=None, clear_on_start=False)
+        self.agent_printer = UITextPrinter(self.agent_output, title=None, clear_on_start=False)
+        
+        # Initialize the agent components
+        self.voice_agent.init_LLmToAudioOutput(
+            ollama_model_name=self.ollama_model_name,
+            system_prompt=self.system_prompt,
+            tts_engine=self.tts_engine,
+            speaking_rate=self.speaking_rate,
+            tts_model_path=self.tts_model_path,
+            max_words_to_speak_start=self.max_words_to_speak_start,
+            max_words_to_speak=self.max_words_to_speak,
+            verbose=self.verbose,
+            printer=self.agent_printer
+        )
+
+        self.voice_agent.init_AudioToText(
+            asr_model_name=self.asr_model_name,
+            end_of_utterance_duration=self.end_of_utterance_duration,
+            verbose=self.verbose,
+            printer=self.user_printer
+        )
+        
     def create_widgets(self):
         # Main container frame
         main_frame = ctk.CTkFrame(self.root)
@@ -149,15 +176,31 @@ class VoiceAgentApp:
         )
         self.agent_output.pack(fill="both", expand=True, padx=5, pady=(0, 5))
         
-        # Run/Stop button at the bottom
+        # Button frame
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack(fill="x", pady=(5, 5))
+        
+        # Run/Stop button
         self.run_button = ctk.CTkButton(
-            main_frame,
+            button_frame,
             text="Run",
             font=("Arial", self.button_font_size, "bold"),
             height=40,
             command=self.toggle_run
         )
-        self.run_button.pack(pady=(5, 5))
+        self.run_button.pack(side="left", padx=(0, 5), fill="x", expand=True)
+        
+        # Exit button
+        self.exit_button = ctk.CTkButton(
+            button_frame,
+            text="Exit",
+            font=("Arial", self.button_font_size, "bold"),
+            height=40,
+            fg_color="#d32f2f",  # Red color for exit button
+            hover_color="#b71c1c",  # Darker red on hover
+            command=self.exit_application
+        )
+        self.exit_button.pack(side="right", padx=(5, 0), fill="x", expand=True)
         
     def toggle_run(self):
         if not self.is_running:
@@ -169,6 +212,9 @@ class VoiceAgentApp:
         self.is_running = True
         self.run_button.configure(text="Stop")
         self.stop_event.clear()
+        
+        # Reset the voice agent's stop events
+        self.voice_agent.reset_stop_events()
         
         # Clear textboxes and initialize with starting content
         self.user_input.delete("1.0", "end")
@@ -186,73 +232,45 @@ class VoiceAgentApp:
         if self.is_running:
             self.is_running = False
             self.run_button.configure(text="Run")
-            self.stop_event.set()
             
             # Update UI to show stopping
-            self.agent_output.insert("end", "\nStopping agent...\n")
+            self.agent_output.insert("end", "\nStopping...\n")
+            
+            # Set the stop event first
+            self.stop_event.set()
+            
+            try:
+                # Then stop the audio stream
+                if hasattr(self.voice_agent.input_handler, 'input_audio_stream'):
+                    if self.voice_agent.input_handler.input_audio_stream.is_active():
+                        self.voice_agent.input_handler.input_audio_stream.stop_stream()
+            except:
+                pass
             
             # Give the thread a moment to clean up
             if self.agent_thread and self.agent_thread.is_alive():
                 self.agent_thread.join(timeout=2.0)
     
     def run_agent(self):
-        va = None
         try:
-            # Initialize voice agent
-            va = VoiceAgent()
+            # Reinitialize the audio stream before starting to prevent overflow errors
+            self.voice_agent.input_handler.initialize_audio_stream()
             
-            # Create custom UI printers for input and output
-            # Don't add titles since we already added them in start_agent
-            user_printer = UITextPrinter(self.user_input, title=None, clear_on_start=False)
-            agent_printer = UITextPrinter(self.agent_output, title=None, clear_on_start=False)
-            
-            # Initialize the agent components with our UI printers
-            va.init_LLmToAudioOutput(
-                ollama_model_name=self.ollama_model_name,
-                system_prompt=self.system_prompt,
-                tts_engine=self.tts_engine,
-                speaking_rate=self.speaking_rate,
-                tts_model_path=self.tts_model_path,
-                max_words_to_speak_start=self.max_words_to_speak_start,
-                max_words_to_speak=self.max_words_to_speak,
-                verbose=self.verbose,
-                printer=agent_printer
-            )
-
-            va.init_AudioToText(
-                asr_model_name=self.asr_model_name,
-                end_of_utterance_duration=self.end_of_utterance_duration,
-                verbose=self.verbose,
-                printer=user_printer
-            )
-
             # Connect our UI stop event to the agent components
-            va.input_handler.stop_threads = self.stop_event
-            va.output_handler.stop_event = self.stop_event
+            self.voice_agent.input_handler.stop_threads = self.stop_event
+            self.voice_agent.output_handler.stop_event = self.stop_event
 
             # Run the agent (this will loop until stopped)
-            va.run()
+            self.voice_agent.run()
             
         except Exception as e:
-            # Log exception to the UI
-            error_msg = str(e)
-            print(f"Agent error: {error_msg}")
-            self.root.after(0, lambda: self.agent_output.insert("end", f"\nError: {error_msg}\n"))
+            # Only show errors if we're still running (not during shutdown)
+            if self.is_running and not self.stop_event.is_set():
+                # Log exception to the UI
+                error_msg = str(e)
+                print(f"Agent error: {error_msg}")
+                self.root.after(0, lambda: self.agent_output.insert("end", f"\nError: {error_msg}\n"))
         finally:
-            # Clean up resources
-            if va:
-                if hasattr(va, 'input_handler'):
-                    try:
-                        va.input_handler.shutdown()
-                    except Exception as e:
-                        print(f"Error shutting down input handler: {e}")
-                        
-                if hasattr(va, 'output_handler'):
-                    try:
-                        va.output_handler.shutdown()
-                    except Exception as e:
-                        print(f"Error shutting down output handler: {e}")
-            
             # Update UI state if not already stopped by the user
             if self.is_running:
                 self.root.after(0, self.update_ui_after_stop)
@@ -266,10 +284,31 @@ class VoiceAgentApp:
         self.root.attributes("-fullscreen", False)
         self.root.geometry(self.window_size)
     
+    def exit_application(self):
+        """Fully shut down the voice agent and exit the application"""
+        # First make sure agent is stopped
+        if self.is_running:
+            self.stop_agent()
+            
+        # Properly shutdown the voice agent components
+        if hasattr(self.voice_agent, 'input_handler'):
+            try:
+                self.voice_agent.input_handler.shutdown()
+            except Exception as e:
+                print(f"Error shutting down input handler: {e}")
+                
+        if hasattr(self.voice_agent, 'output_handler'):
+            try:
+                self.voice_agent.output_handler.shutdown()
+            except Exception as e:
+                print(f"Error shutting down output handler: {e}")
+        
+        # Destroy the root window to exit the application
+        self.root.destroy()
+    
     def run(self):
+        self.root.protocol("WM_DELETE_WINDOW", self.exit_application)  # Handle window close event
         self.root.mainloop()
-        # Ensure we stop the agent when closing the window
-        self.stop_agent()
 
 # Create and run the application
 if __name__ == "__main__":
