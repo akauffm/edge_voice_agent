@@ -1,5 +1,5 @@
 # UI based on customtkinter for voice agent
-# Default settings meant to be run on tiny screen (Raspberry Pi)
+# Default settings meant to be run on a Raspberry Pi with 3.5" LCD screen with 480x320 resolution. 
 
 import customtkinter as ctk
 import threading
@@ -102,6 +102,11 @@ class UITextPrinter:
         self.textbox.insert("end", "\n")
     
     def print(self, transcript, duration=None, partial=False):
+
+        if transcript == 'Please speak now...':
+            # don't show this in the UI
+            return
+
         # Always replace the current content of the last line
         last_line_start = self.textbox.index("end-1l linestart")
         self.textbox.delete(last_line_start, "end")
@@ -218,12 +223,18 @@ class VoiceAgentApp:
             verbose=self.verbose,
             printer=self.user_printer
         )
+
+        print('>> Voice Agent initialized.')
         
     def create_widgets(self):
         # Main container frame
         main_frame = ctk.CTkFrame(self.root)
         main_frame.pack(fill="both", expand=True, padx=5, pady=5)  # Reduced padding
         
+        # Get main window size and position
+        main_width = self.root.winfo_width()
+        main_height = self.root.winfo_height()
+
         # User input section
         user_label = ctk.CTkLabel(
             main_frame, 
@@ -236,7 +247,7 @@ class VoiceAgentApp:
             main_frame,
             font=("Arial", self.textbox_font_size),
             wrap="word",
-            height=100  # Fixed height to ensure it fits
+            height=main_height * 0.4
         )
         self.user_input.pack(fill="x", padx=3, pady=1)  # Reduced padding, changed to fill="x"
         
@@ -252,7 +263,7 @@ class VoiceAgentApp:
             main_frame,
             font=("Arial", self.textbox_font_size),
             wrap="word",
-            height=100
+            height=main_height * 0.4
         )
         self.agent_output.pack(fill="x", padx=3, pady=1)
         
@@ -263,39 +274,43 @@ class VoiceAgentApp:
         # Run/Stop button
         self.run_button = ctk.CTkButton(
             button_frame,
-            text="▶️",
+            text="▶️", 
+            width=int(main_width * 0.2),
             command=self.toggle_run
         )
-        self.run_button.pack(side="left", padx=(0, 2))
+        self.run_button.pack(side="left")
         ToolTip(self.run_button, "Start or stop the voice agent")
         
         # Mute button with microphone icon
         self.mute_button = ctk.CTkButton(
             button_frame,
-            text="🎤",  # Microphone icon
+            text="🎤",
+            width=int(main_width * 0.2),
             command=self.toggle_mute
         )
-        self.mute_button.pack(side="left", padx=(2, 0))
+        self.mute_button.pack(side="left")
         self.mute_tooltip = ToolTip(self.mute_button, "Mute mic")
                 
         # Show message context button
         self.context_button = ctk.CTkButton(
             button_frame,
-            text="📋", # alt: "💬" "📋"
+            text="💬",
+            width=int(main_width * 0.2),
             command=self.show_message_context
         )
-        self.context_button.pack(side="left", padx=(0, 2))
+        self.context_button.pack(side="left")
         ToolTip(self.context_button, "Show conversation history")
         
         # Exit button
         self.exit_button = ctk.CTkButton(
             button_frame,
             text="⬅️",
+            width=int(main_width * 0.2),
             fg_color="#d32f2f",  # Red color for exit button
             hover_color="#b71c1c",  # Darker red on hover
             command=self.exit_application
         )
-        self.exit_button.pack(side="left", padx=(2, 0))
+        self.exit_button.pack(side="left")
         ToolTip(self.exit_button, "Shutdown and exit")
         
     def toggle_run(self):
@@ -473,6 +488,13 @@ class VoiceAgentApp:
     
     def run(self):
         self.root.protocol("WM_DELETE_WINDOW", self.exit_application)
+        
+        # Force window to the foreground
+        self.root.lift()
+        self.root.attributes('-topmost', True)
+        self.root.after(10, lambda: self.root.attributes('-topmost', False))
+        self.root.focus_force()
+        
         self.root.mainloop()
 
 # Create and run the application
