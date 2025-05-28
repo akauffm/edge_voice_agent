@@ -190,6 +190,16 @@ class VoiceAgentApp:
         )
         self.run_button.pack(side="left", padx=(0, 5), fill="x", expand=True)
         
+        # Show message context button
+        self.context_button = ctk.CTkButton(
+            button_frame,
+            text="Show Message Context",
+            font=("Arial", self.button_font_size, "bold"),
+            height=40,
+            command=self.show_message_context
+        )
+        self.context_button.pack(side="left", padx=(0, 5), fill="x", expand=True)
+        
         # Exit button
         self.exit_button = ctk.CTkButton(
             button_frame,
@@ -268,6 +278,70 @@ class VoiceAgentApp:
         """Exit fullscreen mode when Escape is pressed"""
         self.root.attributes("-fullscreen", False)
         self.root.geometry(self.window_size)
+    
+    def show_message_context(self):
+        """Display the current message context in a popup window"""
+        if not hasattr(self.voice_agent, 'output_handler') or not hasattr(self.voice_agent.output_handler, 'messages'):
+            return
+        
+        # Get main window size and position
+        main_width = self.root.winfo_width()
+        main_height = self.root.winfo_height()
+        main_x = self.root.winfo_x()
+        main_y = self.root.winfo_y()
+        
+        # Calculate popup size relative to main window (90% of main window size)
+        popup_width = int(main_width * 0.9)
+        popup_height = int(main_height * 0.9)
+        
+        # Center the popup relative to the main window
+        popup_x = main_x + (main_width - popup_width) // 2
+        popup_y = main_y + (main_height - popup_height) // 2
+        
+        # Create popup window
+        popup = ctk.CTkToplevel(self.root)
+        popup.title("Message Context")
+        popup.geometry(f"{popup_width}x{popup_height}+{popup_x}+{popup_y}")
+        popup.transient(self.root)  # Make it transient to main window (will minimize with parent)
+        popup.grab_set()  # Make it modal
+        
+        # Ensure popup comes to foreground and has focus
+        popup.lift()  # Lift the window to the top
+        popup.focus_force()  # Force focus
+        
+        # For macOS and some other platforms, additional measures to bring to front
+        popup.after(10, lambda: popup.focus_force())  # Force focus again after a short delay
+        
+        # Create textbox for messages
+        message_text = ctk.CTkTextbox(
+            popup,
+            font=("Arial", self.textbox_font_size),
+            wrap="word"
+        )
+        message_text.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Format and display messages
+        messages = self.voice_agent.output_handler.messages
+        formatted_text = ""
+        
+        for i, msg in enumerate(messages):
+            role = msg.get('role', 'unknown')
+            content = msg.get('content', '')
+            
+            role_display = role.upper()
+            formatted_text += f"--- {role_display} ---\n{content}\n\n"
+        
+        message_text.insert("1.0", formatted_text)
+        message_text.see("1.0")  # Scroll to the beginning
+        
+        # Add close button
+        close_button = ctk.CTkButton(
+            popup,
+            text="Close",
+            font=("Arial", self.button_font_size, "bold"),
+            command=popup.destroy
+        )
+        close_button.pack(pady=10)
     
     def exit_application(self):
         """Fully shut down the voice agent and exit the application"""
