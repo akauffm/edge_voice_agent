@@ -15,9 +15,35 @@ class ToolTip:
         self.delay = delay
         self.tooltip_window = None
         self.scheduled_id = None
-        self.widget.bind("<Enter>", self.schedule_show)
-        self.widget.bind("<Leave>", self.on_leave)
-        self.widget.bind("<ButtonPress>", self.on_leave)  # Hide on button press
+        
+        # Remove any existing bindings with the same tag
+        self._unbind_events()
+        
+        # Add new bindings with a specific tag
+        self._bind_events()
+        
+    def update_text(self, new_text):
+        """Update the tooltip text"""
+        self.text = new_text
+        # If tooltip is currently showing, update it
+        if self.tooltip_window:
+            for widget in self.tooltip_window.winfo_children():
+                if isinstance(widget, tk.Frame):
+                    for label in widget.winfo_children():
+                        if isinstance(label, tk.Label):
+                            label.config(text=new_text)
+    
+    def _bind_events(self):
+        """Bind mouse events to the widget"""
+        self.widget.bind("<Enter>", self.schedule_show, add="+")
+        self.widget.bind("<Leave>", self.on_leave, add="+")
+        self.widget.bind("<ButtonPress>", self.on_leave, add="+")
+        
+    def _unbind_events(self):
+        """Unbind events to prevent duplicate handlers"""
+        self.widget.unbind("<Enter>")
+        self.widget.unbind("<Leave>")
+        self.widget.unbind("<ButtonPress>")
 
     def schedule_show(self, event=None):
         """Schedule the tooltip to appear after the delay"""
@@ -131,6 +157,9 @@ class VoiceAgentApp:
         self.end_of_utterance_duration = end_of_utterance_duration
         self.verbose = verbose
         
+        # Microphone state
+        self.is_muted = False
+        
         # UI config
         self.window_size = window_size
         self.fullscreen = fullscreen
@@ -239,6 +268,21 @@ class VoiceAgentApp:
         self.run_button.pack(side="left", padx=(0, 5), fill="x", expand=True)
         ToolTip(self.run_button, "Start or stop the voice agent.\nMessage context will be cleared when stopping.")
         
+        # Mute button with microphone icon
+        self.mute_button = ctk.CTkButton(
+            button_frame,
+            text="🎤",  # Microphone icon
+            font=("Arial", self.button_font_size * 1.5, "bold"),  # Larger font for icon
+            height=40,
+            width=60,  # Fixed width for icon button
+            fg_color="#ff9800",  # Orange color for mute button
+            hover_color="#ed8c00",  # Darker orange on hover
+            command=self.toggle_mute
+        )
+        self.mute_button.pack(side="left", padx=(0, 5), fill=None, expand=False)
+        # Initial tooltip
+        self.mute_tooltip = ToolTip(self.mute_button, "Click to mute microphone")
+        
         # Show message context button
         self.context_button = ctk.CTkButton(
             button_frame,
@@ -278,6 +322,11 @@ class VoiceAgentApp:
         self.is_running = True
         self.run_button.configure(text="Terminate agent")
         
+        # Reset mute state
+        self.is_muted = False
+        self.mute_button.configure(text="🎤", fg_color="#ff9800")
+        self.mute_tooltip.update_text("Click to mute microphone")
+        
         # Clear textboxes and initialize with starting content
         self.user_input.delete("1.0", "end")
         self.user_input.insert("end", "--- User Input --")
@@ -315,7 +364,11 @@ class VoiceAgentApp:
                 self.agent_thread.join(timeout=1.0)
             self.agent_thread = None
 
+            # Reset button states
             self.run_button.configure(text="Start new agent")
+            self.is_muted = False
+            self.mute_button.configure(text="🎤", fg_color="#ff9800")
+            self.mute_tooltip.update_text("Mute mic")
     
     def run_agent(self):
         self.voice_agent.run()
@@ -323,6 +376,28 @@ class VoiceAgentApp:
     def update_ui_after_stop(self):
         self.is_running = False
         self.run_button.configure(text="Start new agent")
+        
+    def toggle_mute(self):
+        """Toggle microphone mute status"""
+        if not self.is_running:
+            return
+            
+        if self.is_muted:
+            # Unmute the microphone
+            if self.voice_agent.unmute_microphone():
+                self.is_muted = False
+                self.mute_button.configure(text="🎤", fg_color="#ff9800")  # Active microphone icon
+                # Update tooltip to show what will happen on next click
+                self.mute_tooltip.update_text("Mute mic")
+                self.user_input.see("end")
+        else:
+            # Mute the microphone
+            if self.voice_agent.mute_microphone():
+                self.is_muted = True
+                self.mute_button.configure(text="🔇", fg_color="#795548")  # Muted microphone icon
+                # Update tooltip to show what will happen on next click
+                self.mute_tooltip.update_text("Unmute mic")
+                self.user_input.see("end")
     
     def exit_fullscreen(self, event=None):
         """Exit fullscreen mode when Escape is pressed"""

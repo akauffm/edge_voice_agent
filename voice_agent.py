@@ -534,6 +534,28 @@ class AudioToText:
         self.vad.reset_states()
 
 
+    def mute(self):
+        """Temporarily stop the audio input stream without destroying it"""
+        if self.input_audio_stream and self.input_audio_stream.is_active():
+            self.input_audio_stream.stop_stream()
+            self._info("Audio input stream muted")
+            return True
+        return False
+            
+    def unmute(self):
+        """Resume the audio input stream if it exists"""
+        if self.input_audio_stream and not self.input_audio_stream.is_active():
+            self.input_audio_stream.start_stream()
+            self._info("Audio input stream unmuted")
+            return True
+        return False
+    
+    def is_muted(self):
+        """Check if the audio input stream is currently muted"""
+        if self.input_audio_stream:
+            return not self.input_audio_stream.is_active()
+        return True  # If no stream exists, consider it muted
+            
     def shutdown(self):
         # Clean up audio resources
         if self.input_audio_stream:
@@ -644,3 +666,15 @@ class VoiceAgent():
 
     def stop_event_set(self):
         return self.input_handler.stop_event.is_set() or self.output_handler.stop_event.is_set()
+        
+    def mute_microphone(self):
+        """Temporarily mute the input audio stream"""
+        return self.input_handler.mute()
+        
+    def unmute_microphone(self):
+        """Resume the input audio stream"""
+        return self.input_handler.unmute()
+        
+    def is_microphone_muted(self):
+        """Check if the microphone is currently muted"""
+        return self.input_handler.is_muted()
