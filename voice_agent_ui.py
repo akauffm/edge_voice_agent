@@ -179,6 +179,10 @@ class VoiceAgentApp:
         
         # Set window size and fullscreen
         self.root.geometry(self.window_size)
+        size_part = self.window_size.split('+')[0]
+        self.window_width, self.window_height = map(int, size_part.split('x'))
+        print(f"Current size: {self.window_width}x{self.window_height}")
+
         if self.fullscreen:
             self.root.attributes("-fullscreen", True)
         self.root.resizable(False, False)
@@ -229,11 +233,10 @@ class VoiceAgentApp:
     def create_widgets(self):
         # Main container frame
         main_frame = ctk.CTkFrame(self.root)
-        main_frame.pack(fill="both", expand=True, padx=5, pady=5)  # Reduced padding
+        main_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
         # Get main window size and position
-        main_width = self.root.winfo_width()
-        main_height = self.root.winfo_height()
+        print(f"width and height: {self.window_width}, {self.window_height}")
 
         # User input section
         user_label = ctk.CTkLabel(
@@ -241,13 +244,13 @@ class VoiceAgentApp:
             text="User Input", 
             font=("Arial", self.label_font_size, "bold")
         )
-        user_label.pack(pady=(2, 0))  # Reduced padding
+        user_label.pack(pady=(2, 0))
         
         self.user_input = ctk.CTkTextbox(
             main_frame,
             font=("Arial", self.textbox_font_size),
             wrap="word",
-            height=main_height * 0.4
+            height=self.window_height * 0.3
         )
         self.user_input.pack(fill="x", padx=3, pady=1)  # Reduced padding, changed to fill="x"
         
@@ -263,7 +266,7 @@ class VoiceAgentApp:
             main_frame,
             font=("Arial", self.textbox_font_size),
             wrap="word",
-            height=main_height * 0.4
+            height=self.window_height * 0.3
         )
         self.agent_output.pack(fill="x", padx=3, pady=1)
         
@@ -275,7 +278,7 @@ class VoiceAgentApp:
         self.run_button = ctk.CTkButton(
             button_frame,
             text="▶️", 
-            width=int(main_width * 0.2),
+            width=int(self.window_width * 0.2),
             command=self.toggle_run
         )
         self.run_button.pack(side="left")
@@ -285,7 +288,7 @@ class VoiceAgentApp:
         self.mute_button = ctk.CTkButton(
             button_frame,
             text="🎤",
-            width=int(main_width * 0.2),
+            width=int(self.window_width * 0.2),
             command=self.toggle_mute
         )
         self.mute_button.pack(side="left")
@@ -295,7 +298,7 @@ class VoiceAgentApp:
         self.context_button = ctk.CTkButton(
             button_frame,
             text="💬",
-            width=int(main_width * 0.2),
+            width=int(self.window_width * 0.2),
             command=self.show_message_context
         )
         self.context_button.pack(side="left")
@@ -305,7 +308,7 @@ class VoiceAgentApp:
         self.exit_button = ctk.CTkButton(
             button_frame,
             text="⬅️",
-            width=int(main_width * 0.2),
+            width=int(self.window_width * 0.2),
             fg_color="#d32f2f",  # Red color for exit button
             hover_color="#b71c1c",  # Darker red on hover
             command=self.exit_application
