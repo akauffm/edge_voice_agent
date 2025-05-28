@@ -91,8 +91,8 @@ def main():
     parser.add_argument("--max_words_to_speak", type=float, default=20, help="always produce speech after this many words were produced ignoring sentence boundaries.")        
     parser.add_argument("--system_prompt", default=LLmToAudio.DEFAULT_SYSTEM_PROMPT, help="Instructions for the model.")
     parser.add_argument("--end_of_utterance_duration", type=float, default=0.5, help="Silence seconds until end of turn of user identified")
-    parser.add_argument("--verbose", action="store_true", help="Verbose status info")
     parser.add_argument("--enable_keyboard_control", action="store_true", default=False, help="Enable keyboard control (space to mute/unmute, ESC to exit)")
+    parser.add_argument("--verbose", action="store_true", help="Verbose status info")
     
     args = parser.parse_args()
     

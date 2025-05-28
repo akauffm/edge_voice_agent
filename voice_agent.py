@@ -196,6 +196,11 @@ class LLmToAudio:
             self.sentence_queue.get_nowait()
             self.sentence_queue.task_done()
 
+        # Clear states
+        self.messages = []
+        self.text_buffer = ""
+
+
     def shutdown(self):
         """Close all resources."""
         if self.audio_stream:
@@ -285,7 +290,7 @@ class LLmToAudio:
                             self._info(f"Queued full sentence: {sentence}")
                             if not self.first_speech_fragment_finalized:
                                 self.time_to_first_speech_fragment = time.time() - self.time_llm_gen_started 
-                                self._info(f"Time to first speech fragment (organic): {self.time_to_first_speech_fragment}")
+                                self._info(f"\n>> Time to first speech fragment (organic): {self.time_to_first_speech_fragment:.2f} seconds")
                             self.first_speech_fragment_finalized = True
 
                 elif len(self.text_buffer_words) > self._get_max_buffer_words_before_speaking():
@@ -306,7 +311,7 @@ class LLmToAudio:
                     self._info(f"Queued fragment: {fragment}")
                     if not self.first_speech_fragment_finalized:
                         self.time_to_first_speech_fragment = time.time() - self.time_llm_gen_started 
-                        self._info(f"Time to first speech fragment (forced): {self.time_to_first_speech_fragment}")
+                        self._info(f"\n>> Time to first speech fragment (forced): {self.time_to_first_speech_fragment:.2f} seconds")
 
                     self.first_speech_fragment_finalized = True
 
@@ -413,7 +418,7 @@ class LLmToAudio:
             if not self.first_chunk_emitted:
                 self.first_chunk_emitted = True
                 self.time_to_first_token = time.time() - self.time_llm_gen_started
-                self._info(f">> First chunk took {self.time_to_first_token:.2f} seconds")
+                self._info(f"\n>> Time to first token: {self.time_to_first_token:.2f} seconds")
 
             if self.stop_event.is_set():
                 break

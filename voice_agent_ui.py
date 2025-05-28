@@ -329,9 +329,7 @@ class VoiceAgentApp:
         
         # Clear textboxes and initialize with starting content
         self.user_input.delete("1.0", "end")
-        self.user_input.insert("end", "--- User Input --")
         self.agent_output.delete("1.0", "end")
-        self.agent_output.insert("end", "--- Assistant Output ---")
         
         # start the voice agent and run in thread
         self.voice_agent.start()      
@@ -345,18 +343,13 @@ class VoiceAgentApp:
         if self.is_running:
             self.is_running = False
             
-            self.agent_output.insert("end", "Stopping...")
-            
             # Trigger stop threads early to allow tasks to finish
             self.voice_agent.trigger_stop_events()
 
-            # Then stop the agent
-            self.voice_agent.stop()
-
             # Clear textboxes
             self.user_input.delete("1.0", "end")
-            self.user_input.insert("end", "--- terminated ---")
             self.agent_output.delete("1.0", "end")
+            self.user_input.insert("end", "--- terminated ---")            
             self.agent_output.insert("end", "--- terminated ---")
             
             # Try to terminate run thread 
@@ -369,6 +362,10 @@ class VoiceAgentApp:
             self.is_muted = False
             self.mute_button.configure(text="🎤", fg_color="#ff9800")
             self.mute_tooltip.update_text("Mute mic")
+
+            # Then stop the agent
+            self.voice_agent.stop()
+
     
     def run_agent(self):
         self.voice_agent.run()

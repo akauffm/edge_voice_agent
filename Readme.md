@@ -1,4 +1,4 @@
-# Exemplary Voice Agent running fully on-device
+# Small Voice Agent running fully offline on edge devices
 
 * flexible wrt to ASR, LLM and TTS component, currently supported:
    * ASR: Moonshine, FasterWhisper, Nemo FastConformer, Vosk
@@ -10,36 +10,45 @@
       * TTSL: Piper
       * LLM: Gemma3:1b
 
-* simplified end of utterance detection based on Silero VAD (set the duration via ```---end_of_utterance_duration```, > 0.5 seems to be good)
-
-* currently no interruption capabilities
 
 ## Installation
 
-* then install requirements here
-```pip install -r requirements.txt```
+### Core functionality
+
+* install dependencies
+   * ```pip install -r requirements.txt```
+   * CLI should work on all environments
+   * the UI is based on tkinter (customtkinter), which should run seamlessly on Linux; on MacOs it might be necessary to download python from https://www.python.org/downloads/macos and use this python version instead of one installed by homebrew (ie, create your python environment with the newly installed version of python, which sould be found under eg ```/usr/local/bin/python3.12```)
 
 * download these two repos and install with ```pip install -e .``` each (also install their dependencies)
    * https://github.com/ktomanek/captioning (install all ASR models you want to run, see instructions there)
    * https://github.com/ktomanek/edge_tts_comparison
 
-* download sentence splitter: ```python -c "import nltk; nltk.download('punkt_tab')```
+* download sentence splitter: 
+   * ```python -c "import nltk; nltk.download('punkt_tab')``` or
+   * ```python -c "import ssl; import nltk; ssl._create_default_https_context = ssl._create_unverified_context; nltk.download('punkt_tab')"```
 
-### ASR models
+* potentially install ```sudo apt install python3-tk```
+
+
+### Models
+
+#### ASR models
 
 * moonshine:
 ```pip install useful-moonshine-onnx@git+https://git@github.com/usefulsensors/moonshine.git#subdirectory=moonshine-onnx```
 
-* optionally install nemo asr models: ```pip install "nemo_toolkit[asr]"```
+* optionally install other models:
 
-* optionally install faster whisper: ```pip install faster whisper```
+* ```pip install "nemo_toolkit[asr]"```
+* ```pip install faster whisper```
 
-### TTS models
+##### TTS models
 
 * if using Kokoro, copy model files here
 * for Piper, Lessac voice included here, copy other voice models if wanted
 
-### Ollama
+#### Ollama
 
 * install ollama locally: https://ollama.com/download
 * then pull the model you want ot use, eg: 
@@ -50,20 +59,17 @@
 
 ```pip install ollama```
 
+* when running on edge devices like Raspberry Pi, setting [CPU governor](https://www.kernel.org/doc/Documentation/cpu-freq/governors.txt) can impact latency; the following is working well (but may lead to more power consumption and heat):
+```echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor```
 
-## Examples
 
+## CLI command line arguments
 
-### Survival Guide
+### End of utterance detection
 
-```python voice_agent.py \
-  --system_prompt "You are an outdoor survival guide assistant helping users, who have no internet access, no phone access, and are far from civilization to deal with challenges they experience in the outdoors. Please give helpful advice, but be VERY brief. Only provide details when explicitly asked for it." \
-  --asr_model_name moonshine_onnx_base \
-  --speaking_rate 2.0 \
-  --end_of_utterance_duration 0.7
-  ```
+```--end_of_utterance_duration 0.7``` determines when we consider the user input to be finished. Adapt according to user's speaking patterns, slower speakers might need a higher value. ```0.7``` seems to be a good default
 
-## Configure system prompt from text
+## System prompt from text
 
 * you can increase the speaking rate to make long responses not feel quite as length
 
@@ -72,6 +78,47 @@
 ## Other models
 
 * moonshine base seems to run fast enough on Raspberry Pi.
-* Gemma3:4b leads to significant improvement on conversation side, but starts feeling slow
+* Gemma3:4b leads to significant improvement on conversation side, but is too slow on Raspberry Pi
 
 ```python voice_agent.py --asr_model_name moonshine_onnx_base --ollama_model_name gemma3:4b --speaking_rate 3.0```
+
+
+## Performance measurements
+
+### User Speech input
+
+See [here](https://github.com/ktomanek/captioning?tab=readme-ov-file#streaming-performance-comparison) for comparison on different ASR models in the streaming lib on various devices.
+
+### LLM Generation
+
+Before audio output can be generated, the LLM needs to generate enough tokens to start synthesizing audio output.
+When running ```voice_agent_cli.py --verbose```, several performance metrics will be shown quantifying this latency.
+
+  * Time to first token (seconds)
+      * measures the time it took the LLM until the first token was generated
+      * this in only dependent on the LLM's inference speed in streaming mode
+  * Time to first speech fragment (seconds)
+      * measures how long it took the LLM to generate enough tokens needed to start synthesizing audio output (this doesn't include the time needed to actually generate the audio ouput, but is an important measure for minimal latency until audio can be generated)
+      * this also depends on how the parameter ```--max_words_to_speak_start``` is set. A lower number means that the first speech segment is shorter and hence can be generated by the LLM quicker; the downside is a likely more synthetic sounding output. Processing speech on the respecitve device should be taken into consideration here.
+
+Ollama allows to measure the average token/second generation time when running with --verbose. We use the metric ```eval rate```.  For my measurements, I used the following on different platforms:
+```ollama run gemma3:1b "tell me a 100 word story about cats" --verbose```
+
+#### Measurements
+
+Hardware tested
+
+* Rasp - Raspberry Pi 5, 16GB
+* Mac M2 - Macbook Air M2, 16GB
+
+In both cases, measurements where taking with the CPU governor  set to ```performance``` (see above). On Mac M2, the impact was minimal, but on Raspberry Pi 5, setting the CPU governor to ```performance``` led to more consistent and lower ```time to first token/speech segment``` measurements.
+
+We set ```--max_words_to_speak_start``` to 5 for these experiments.
+
+We use the phrase ```tell me a 100 word story about cats``` to trigger a LLM response in ```voice_agent_cli.py```.
+
+| metric | Mac M2 | Rasp |
+| -- | -- | -- |
+| LLM inference speed (tokens/seconds) | ~63 tok/sec | ~13 tok/sec |
+| Time to first token (seconds) | ~0.16 sec | ~0.28 sec |
+| Time to first speech fragment (seconds) | ~0.7 sec  | ~1.2 sec |
