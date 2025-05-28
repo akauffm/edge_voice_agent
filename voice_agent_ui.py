@@ -6,6 +6,7 @@ import threading
 import time
 import tkinter as tk
 from voice_agent import VoiceAgent, LLmToAudio, AudioToText
+import voice_agent_utils
 
 class ToolTip:
     def __init__(self, widget, text="", delay=800):
@@ -141,7 +142,7 @@ class VoiceAgentApp:
                  speaking_rate=1.0,
                  max_words_to_speak_start=5,
                  max_words_to_speak=20,
-                 system_prompt=LLmToAudio.DEFAULT_SYSTEM_PROMPT,
+                 system_prompt=voice_agent_utils.DEFAULT_SYSTEM_PROMPT,
                  end_of_utterance_duration=0.5,
                  verbose=False):
                  
@@ -485,12 +486,30 @@ class VoiceAgentApp:
 
 # Create and run the application
 if __name__ == "__main__":
+
+    parser = voice_agent_utils.get_ui_argument_parser()
+    args = parser.parse_args()
+    
     app = VoiceAgentApp(
         # UI configuration
-        window_size="800x800",
-        fullscreen=False,
-        label_font_size=18,
-        textbox_font_size=24,
-        button_font_size=20,
+        window_size=args.window_size,
+        fullscreen=args.fullscreen,
+        label_font_size=args.label_font_size,
+        textbox_font_size=args.textbox_font_size,
+        button_font_size=args.button_font_size,
+        appearance_mode=args.appearance_mode,
+        color_theme=args.color_theme,
+        
+        # Voice agent configuration
+        ollama_model_name=args.ollama_model_name,
+        tts_engine=args.tts_engine,
+        asr_model_name=args.asr_model_name,
+        tts_model_path=args.tts_model_path,
+        speaking_rate=args.speaking_rate,
+        max_words_to_speak_start=args.max_words_to_speak_start,
+        max_words_to_speak=args.max_words_to_speak,
+        system_prompt=args.system_prompt,
+        end_of_utterance_duration=args.end_of_utterance_duration,
+        verbose=args.verbose
     )
     app.run()

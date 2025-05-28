@@ -27,7 +27,7 @@ except LookupError:
     nltk.download('punkt')
 import re
 import emoji
-
+import voice_agent_utils
 
 class ColoredPrinter(printers.CaptionPrinter):
 
@@ -79,11 +79,11 @@ class ColoredPrinter(printers.CaptionPrinter):
 class LLmToAudio:
     """Generate LLM output based on prompt and stream into TTS output."""
 
-    DEFAULT_SYSTEM_PROMPT = """You are an assistant that runs on an edge device. Respond with a single, short sentence only."""
+
 
     def __init__(self, 
                  ollama_model_name="gemma3:1b", 
-                 system_prompt=DEFAULT_SYSTEM_PROMPT,
+                 system_prompt=voice_agent_utils.DEFAULT_SYSTEM_PROMPT,
                  tts_engine='piper',
                  speaking_rate=1.0, # higher numbers means faster
                  tts_model_path=None,
@@ -620,8 +620,6 @@ class AudioToText:
 
 class VoiceAgent():
 
-    GOODBYE_MESSAGE = 'Good bye!'
-    EXIT_COMMAND = 'please exit'
 
     def __init__(self):
         pass
@@ -654,8 +652,8 @@ class VoiceAgent():
             if not user_input_transcribed:
                 continue
 
-            if self.EXIT_COMMAND.lower() in user_input_transcribed.lower():
-                self.output_handler._speak_sentence(self.GOODBYE_MESSAGE)
+            if voice_agent_utils.DEFAULT_EXIT_COMMAND.lower() in user_input_transcribed.lower():
+                self.output_handler._speak_sentence(voice_agent_utils.DEFAULT_GOODBYE_MESSAGE)
                 time.sleep(0.5)
                 break
             else:
