@@ -1,3 +1,6 @@
+# CLI for voice agent
+# Default settings meant to be run on tiny screen (Raspberry Pi)
+
 import argparse
 from voice_agent import VoiceAgent, LLmToAudio
 
@@ -35,6 +38,7 @@ def main():
         end_of_utterance_duration=0.5, 
         verbose=args.verbose
     )
+    va.start()
 
     va.run()
 

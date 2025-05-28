@@ -2,11 +2,6 @@
 #
 # Uses Ollama for on-devive LLMs. Supports several on-device runnable tts-engines and asr models.
 # Defaults are set for smallest models so that it can run on edge devices like Raspberry Pi 5.
-#
-# Usage Example:
-# python voice_agent.py \
-#   --system_prompt "You are an outdoor survival guide assistant helping users, who have no internet access, no phone access, and are far from civilization to deal with challenges they experience in the outdoors. Please give helpful advice, but be VERY brief. Only give details when asked." \
-#   --speaking_rate 3.0
 
 
 from captioning_lib import captioning_utils
@@ -100,14 +95,20 @@ class LLmToAudio:
         """Initialize the streamer with Piper and Ollama models."""
         self.verbose = verbose
 
+        ## Init LLM
+        self.system_prompt = system_prompt
+        self.messages = [
+            {'role': 'system', 'content': self.system_prompt},
+        ]
+
         self.ollama_model_name = ollama_model_name
         print(f"Using Ollama model: {self.ollama_model_name}")
-
         self.ollama_options={
             "temperature": 0.3,  # lower temperature for speed
             "num_predict": -1,  # unlimited
             #"num_ctx": 1024
         }
+
         # warm up model
         t1 = time.time()
         ollama.chat(
@@ -117,17 +118,11 @@ class LLmToAudio:
         )        
         self._info(f"Ollama model warmed up in {time.time()-t1} secs.")
 
-        # initialize conversation context
-        self.messages = [
-            {'role': 'system', 'content': system_prompt},
-        ]
-
-        # configure TTS delay
+        # Init TTS
         self.max_words_to_speak_start = max_words_to_speak_start
         self.max_words_to_speak = max_words_to_speak
         assert self.max_words_to_speak_start <= self.max_words_to_speak
 
-        # load TTS
         if tts_engine == 'piper':
             print('Initializing Piper TTS')
             if tts_model_path:
@@ -151,38 +146,63 @@ class LLmToAudio:
         self.speaking_rate = speaking_rate
         print(f"Using speaking rate: {self.speaking_rate}")        
 
-        # Initialize audio stream
+        # increase buffer size if needed, esp on slower devices like raspberry pi
+        self.audio_buffer_size = 2048
+
+        # Printer
+        if not printer:
+            self.assistant_printer = ColoredPrinter("Agent Output", "magenta")
+        else:
+            self.assistant_printer = printer
+
         self.audio_stream = None
-        
+
+        # Thread handlers
+        self.stop_event = threading.Event()
+        self.lock = threading.Lock()
+
+        # Signal handlers for graceful termination
+        if threading.current_thread() is threading.main_thread():
+            print('>>> setting up signal handlers')
+            signal.signal(signal.SIGINT, self._signal_handler)
+            signal.signal(signal.SIGTERM, self._signal_handler)
+
+    
+    def start(self):
+        """Start and restart the agent."""
+        # Reset LLM context
+        self.messages = [
+            {'role': 'system', 'content': self.system_prompt},
+        ]
+
         # Text processing
         self.text_buffer = ""
         self.sentence_queue = queue.Queue()
         self.is_processing = False
         self.is_speaking = False
-        self.lock = threading.Lock()
-        
-        # Create stop event for clean termination
-        self.stop_event = threading.Event()
-        
-        # Set up signal handlers for graceful shutdown, but only in the main thread
-        if threading.current_thread() is threading.main_thread():
-            signal.signal(signal.SIGINT, self._signal_handler)
-            signal.signal(signal.SIGTERM, self._signal_handler)
 
-        # increase buffer size if needed, esp on slower devices like raspberry pi
-        self.audio_buffer_size = 2048
-
-        # printer for output
-        if not printer:
-            self.assistant_printer = ColoredPrinter("Assistant Output", "magenta")
-        else:
-            self.assistant_printer = printer
-    
         # marker for first words spoken
         self.first_speech_fragment_finalized = False
-
         self.time_llm_gen_started = time.time()
         self.first_chunk_emitted = False
+
+
+    def stop(self):
+        """Stop agent."""
+        self.stop_event.clear()
+
+        # Reset text buffers and queues
+        while not self.sentence_queue.empty():
+            self.sentence_queue.get_nowait()
+            self.sentence_queue.task_done()
+
+    def shutdown(self):
+        """Close all resources."""
+        if self.audio_stream:
+            self._info("Closing audio stream...")
+            self.audio_stream.stop()
+            self.audio_stream.close()
+            self.audio_stream = None
 
 
     def _clean_llm_output(self, text):
@@ -304,7 +324,6 @@ class LLmToAudio:
         try:
             while not self.stop_event.is_set():
                 try:
-                    # Get a sentence from the queue with timeout
                     sentence = self.sentence_queue.get(timeout=0.5)
                     
                     # Wait until not speaking to avoid overlap
@@ -314,14 +333,12 @@ class LLmToAudio:
                     if self.stop_event.is_set():
                         break
                     
-                    # Speak the sentence
+                    # Speak new sentence
                     self._speak_sentence(sentence, speed=self.speaking_rate)
                     self.sentence_queue.task_done()
                 
                 except queue.Empty:
-                    # No sentences to process
                     if self.sentence_queue.empty() and not self.text_buffer and not self.is_speaking:
-                        # Exit if we've processed everything
                         break
         
         finally:
@@ -337,22 +354,14 @@ class LLmToAudio:
             return
 
         self.is_speaking = True
+        
         self._info(f"Speaking: {text}")
-        
-        try:
-            # synthesize
-            audio_data, sample_rate = self.tts.synthesize(
-                text, target_sr = self.sample_rate, 
-                speaking_rate=speed, return_as_int16=True)
+        audio_data, sample_rate = self.tts.synthesize(
+            text, target_sr = self.sample_rate, 
+            speaking_rate=speed, return_as_int16=True)
+        self.audio_stream.write(audio_data)
 
-            # play
-            self.audio_stream.write(audio_data)
-
-        except Exception as e:
-            print(f"Error synthesizing speech: {e}")
-        
-        finally:
-            self.is_speaking = False
+        self.is_speaking = False
 
     def _finish_processing(self):
         """Process any remaining text in the buffer."""
@@ -365,17 +374,11 @@ class LLmToAudio:
         if self.sentence_queue.qsize() > 0:
             self._info(f"Waiting for {self.sentence_queue.qsize()} pending sentences...")
             self.sentence_queue.join()
-        
-        # Give a moment for audio to finish playing
+
+    
+        # Give a moment for audio to finish playing to ensure user input and agent aren't interfering
         time.sleep(0.5)
     
-    def shutdown(self):
-        """Close all resources."""
-        if self.audio_stream:
-            self._info("Closing audio stream...")
-            self.audio_stream.stop()
-            self.audio_stream.close()
-            self.audio_stream = None
 
     def process_prompt(self, user_prompt):
         """Process a prompt through Ollama and stream to Piper."""
@@ -444,6 +447,7 @@ class AudioToText:
                  min_partial_duration=0.2, max_segment_duration=15,
                  verbose=False,
                 printer=None):
+
         self.verbose = verbose
         self.end_of_utterance_duration = end_of_utterance_duration
         
@@ -454,72 +458,89 @@ class AudioToText:
             self.caption_printer = ColoredPrinter("User Input", "blue")
         else:
             self.caption_printer = printer
-        
-        self.audio_queue = queue.Queue(maxsize=1000)
-        self.vad = captioning_utils.get_vad(eos_min_silence=200)    
-        self.asr_model = captioning_utils.load_asr_model(asr_model_name, 16000, False)
 
-        # Start transcription thread
-        self.stop_threads = threading.Event()  # Event to signal threads to stop    
+        # For audio input
+        self.audio = None
 
-        self.transcription_handler = captioning_utils.TranscriptionWorker(sampling_rate=captioning_utils.SAMPLING_RATE)
-
-
-        self.transcriber = threading.Thread(target=self.transcription_handler.transcription_worker, 
-                                    kwargs={'vad': self.vad,
-                                            'asr': self.asr_model,
-                                            'audio_queue': self.audio_queue,
-                                            'caption_printer': self.caption_printer,
-                                            'stop_threads': self.stop_threads,
-                                            'min_partial_duration': self.min_partial_duration,
-                                            'max_segment_duration': self.max_segment_duration})
-        self._info(f">>>handler started, recording: {self.transcription_handler.is_speech_recording}")
-        self.transcriber.daemon = True
-        self.transcriber.start()
-
-        # Store parameters for audio stream reinitialization
-        self.audio = pyaudio.PyAudio()
         self.input_device = captioning_utils.find_default_input_device()
         self._info(f"Using default audio input device: {self.input_device}")
         self.device_index = self.input_device['index']
+
+        # Audio buffer
+        self.audio_queue = queue.Queue(maxsize=1000)
+        self.input_audio_stream = None
+
+        # Load models
+        self.vad = captioning_utils.get_vad(eos_min_silence=200)    
+        self.asr_model = captioning_utils.load_asr_model(asr_model_name, 16000, False)
+
+        # Transcription thread
+        self.stop_event = threading.Event()
+        self.transcription_handler = captioning_utils.TranscriptionWorker(
+            sampling_rate=captioning_utils.SAMPLING_RATE)
+
         
-        # Initialize the audio stream
-        self.initialize_audio_stream()
-        
-    def initialize_audio_stream(self):
-        """Create a new audio stream, closing any existing one first"""
-        # Close existing stream if it exists
-        if hasattr(self, 'input_audio_stream') and self.input_audio_stream:
-            try:
-                if self.input_audio_stream.is_active():
-                    self.input_audio_stream.stop_stream()
-                self.input_audio_stream.close()
-            except:
-                pass
-                
-        # Create a new audio stream
+    def start(self):
+
+        # Initialize audio stream
+        self.audio = pyaudio.PyAudio()
         self.input_audio_stream = captioning_utils.get_audio_stream(
             self.audio, 
             input_device_index=self.device_index
         )
 
-    def shutdown(self):
-        time.sleep(0.2)
-        self.stop_threads.set()
+        # Set stop flag and transcriber thread
+        self.stop_event.clear()
+        self.transcriber = threading.Thread(target=self.transcription_handler.transcription_worker, 
+                                    kwargs={'vad': self.vad,
+                                            'asr': self.asr_model,
+                                            'audio_queue': self.audio_queue,
+                                            'caption_printer': self.caption_printer,
+                                            'stop_threads': self.stop_event,
+                                            'min_partial_duration': self.min_partial_duration,
+                                            'max_segment_duration': self.max_segment_duration})
+        self.transcriber.daemon = True
+        self.transcriber.start()
 
-        # Empty queue
-        while not self.audio_queue.empty():
-            logging.debug("Emptying audio queue...")
-            try:
+
+    def stop(self):
+
+        # Stop audio stream
+        if self.input_audio_stream:
+            if self.input_audio_stream.is_active():
+                self.input_audio_stream.stop_stream()
+            self.input_audio_stream.close()
+            self.audio.terminate()
+            self.audio = None
+        
+        # Set stop flag
+        self.stop_event.set()
+
+        # Clear audio buffer
+        try:
+            while True:
                 self.audio_queue.get_nowait()
-                self.audio_queue.task_done()
-            except queue.Empty:
-                break
+        except queue.Empty:
+            pass
 
+        # Stop transcriber thread
+        if self.transcriber and self.transcriber.is_alive():
+            self.transcriber.join(timeout=3.0)   
+            if self.transcriber.is_alive():
+                raise Exception("Transcriber thread not stopped within timeout.")
+        self.transcription_handler.reset()
+
+        # Reset VAD states
+        self.vad.reset_states()
+
+
+    def shutdown(self):
         # Clean up audio resources
         if self.input_audio_stream:
             self.input_audio_stream.stop_stream()
             self.input_audio_stream.close()
+            self.input_audio_stream = None
+
 
     def _info(self, text):
         if self.verbose:
@@ -534,7 +555,7 @@ class AudioToText:
 
             while True:
                 # Check for stop signal
-                if self.stop_threads.is_set():
+                if self.stop_event.is_set():
                     return ""
                 
                 try:
@@ -542,7 +563,7 @@ class AudioToText:
                     self.audio_queue.put(data, timeout=0.1)
                 except Exception as e:
                     # If we're stopping, just ignore errors
-                    if self.stop_threads.is_set():
+                    if self.stop_event.is_set():
                         return ""
                     # Otherwise, re-raise
                     raise
@@ -563,24 +584,17 @@ class AudioToText:
                             self.transcription_handler.reset()
                             break
         finally:
-            # Always try to stop the stream, ignoring any errors
-            try:
-                if self.input_audio_stream.is_active():
-                    self.input_audio_stream.stop_stream()
-                    self._info(f">>> END input audio stream active: {self.input_audio_stream.is_active()}")
-            except:
-                print('>> error stopping stream...')
-                pass
+            # Always try to stop the stream, ignoring errors
+            if self.input_audio_stream.is_active():
+                self.input_audio_stream.stop_stream()
 
-        self._info('>>> --- finished speaking')
         return all_transcribed
 
 
 class VoiceAgent():
 
-    GOODBYE_MESSAGE = 'Goodbye then!'
+    GOODBYE_MESSAGE = 'Good bye!'
     EXIT_COMMAND = 'please exit'
-
 
     def __init__(self):
         pass
@@ -591,87 +605,42 @@ class VoiceAgent():
     def init_LLmToAudioOutput(self, **llmToAudiOutputArgsKwargs):
         self.output_handler = LLmToAudio(**llmToAudiOutputArgsKwargs)
     
-    def reset_stop_events(self):
-        """Reset stop events and state to allow the agent to run again after being stopped"""
-        if hasattr(self, 'input_handler'):
-            # Clear the audio queue before resetting stop event
-            if hasattr(self.input_handler, 'audio_queue'):
-                while not self.input_handler.audio_queue.empty():
-                    try:
-                        self.input_handler.audio_queue.get_nowait()
-                        self.input_handler.audio_queue.task_done()
-                    except:
-                        pass
-                        
-            # Reinitialize the audio stream to prevent overflow errors
-            if hasattr(self.input_handler, 'initialize_audio_stream'):
-                self.input_handler.initialize_audio_stream()
-                        
-            # Now reset the stop event
-            self.input_handler.stop_threads.clear()
-            
-            # Reset transcription handler if it exists
-            if hasattr(self.input_handler, 'transcription_handler'):
-                self.input_handler.transcription_handler.reset()
-            
-        if hasattr(self, 'output_handler'):
-            self.output_handler.stop_event.clear()
-            
-            # Reset conversation context
-            if hasattr(self.output_handler, 'messages'):
-                system_prompt = self.output_handler.messages[0]['content']
-                self.output_handler.messages = [
-                    {'role': 'system', 'content': system_prompt},
-                ]
-            
-            # Reset text buffers and queues
-            if hasattr(self.output_handler, 'text_buffer'):
-                self.output_handler.text_buffer = ""
-            if hasattr(self.output_handler, 'sentence_queue'):
-                # Empty the queue
-                while not self.output_handler.sentence_queue.empty():
-                    try:
-                        self.output_handler.sentence_queue.get_nowait()
-                        self.output_handler.sentence_queue.task_done()
-                    except:
-                        pass
-            
-            # Reset first speech fragment marker
-            if hasattr(self.output_handler, 'first_speech_fragment_finalized'):
-                self.output_handler.first_speech_fragment_finalized = False
+    def start(self):
+        self.output_handler.start()
+        self.input_handler.start()
+
+    def stop(self):
+        self.output_handler.stop()
+        self.input_handler.stop()
+
+    def shutdown(self):
+        self.output_handler.shutdown()
+        self.input_handler.shutdown()
 
     def run(self):
-        try:
-            while True:
-                # Check if we need to stop before starting to listen
-                if self.input_handler.stop_threads.is_set() or self.output_handler.stop_event.is_set():
-                    break
-                
-                try:
-                    user_input_transcribed = self.input_handler.get_speech_input()
-                except Exception as e:
-                    # If we get an error during speech input, check if we're stopping
-                    if self.input_handler.stop_threads.is_set() or self.output_handler.stop_event.is_set():
-                        # If we're stopping, just break the loop without propagating the error
-                        break
-                    else:
-                        # If we're not stopping, re-raise the exception
-                        raise
-                
-                # Check again after listening (might have been stopped during listening)
-                if self.input_handler.stop_threads.is_set() or self.output_handler.stop_event.is_set():
-                    break
-                    
-                if not user_input_transcribed:
-                    continue
+        while True:
+            if self.stop_event_set():
+                break
+            
+            user_input_transcribed = self.input_handler.get_speech_input()
 
-                if self.EXIT_COMMAND.lower() in user_input_transcribed.lower():
-                    self.output_handler._speak_sentence(self.GOODBYE_MESSAGE)
-                    break
-                else:
-                    self.output_handler.process_prompt(user_input_transcribed)     
-        finally:
-            # We're only temporarily stopping, not shutting down completely
-            # The full shutdown happens when the application exits
-            pass
+            if not user_input_transcribed:
+                continue
 
+            if self.EXIT_COMMAND.lower() in user_input_transcribed.lower():
+                self.output_handler._speak_sentence(self.GOODBYE_MESSAGE)
+                time.sleep(0.5)
+                break
+            else:
+                if self.stop_event_set():
+                    break
+
+                self.output_handler.process_prompt(user_input_transcribed)     
+
+    def trigger_stop_events(self):
+        self.input_handler.stop_event.set()
+        self.output_handler.stop_event.set()            
+        time.sleep(0.2)
+
+    def stop_event_set(self):
+        return self.input_handler.stop_event.is_set() or self.output_handler.stop_event.is_set()
