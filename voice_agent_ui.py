@@ -4,7 +4,55 @@
 import customtkinter as ctk
 import threading
 import time
+import tkinter as tk
 from voice_agent import VoiceAgent, LLmToAudio, AudioToText
+
+class ToolTip:
+    def __init__(self, widget, text="", delay=800):
+        # delay controls how long (milliseconds) mouse has to hover over item for tooltip to show
+        self.widget = widget
+        self.text = text
+        self.delay = delay
+        self.tooltip_window = None
+        self.scheduled_id = None
+        self.widget.bind("<Enter>", self.schedule_show)
+        self.widget.bind("<Leave>", self.on_leave)
+        self.widget.bind("<ButtonPress>", self.on_leave)  # Hide on button press
+
+    def schedule_show(self, event=None):
+        """Schedule the tooltip to appear after the delay"""
+        self.cancel_scheduled()
+        self.scheduled_id = self.widget.after(self.delay, self.show_tooltip)
+    
+    def cancel_scheduled(self):
+        """Cancel any scheduled tooltip appearance"""
+        if self.scheduled_id:
+            self.widget.after_cancel(self.scheduled_id)
+            self.scheduled_id = None
+
+    def show_tooltip(self):
+        """Show the tooltip at the current mouse position"""
+        x = self.widget.winfo_pointerx() + 15
+        y = self.widget.winfo_pointery() + 10
+        
+        # Create a toplevel window
+        self.tooltip_window = tk.Toplevel(self.widget)
+        self.tooltip_window.wm_overrideredirect(True)
+        self.tooltip_window.wm_geometry(f"+{x}+{y}")
+        
+        # Add a label to the tooltip
+        frame = tk.Frame(self.tooltip_window, borderwidth=1, relief="solid")
+        frame.pack(ipadx=2, ipady=2)
+        
+        label = tk.Label(frame, text=self.text, justify=tk.LEFT, background="#ffffee", font=("Arial", 10))
+        label.pack(ipadx=3, ipady=3)
+
+    def on_leave(self, event=None):
+        """Cancel scheduled appearance and hide tooltip if showing"""
+        self.cancel_scheduled()
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
 
 class UITextPrinter:
     """Custom printer that updates the UI textbox instead of console"""
@@ -189,6 +237,7 @@ class VoiceAgentApp:
             command=self.toggle_run
         )
         self.run_button.pack(side="left", padx=(0, 5), fill="x", expand=True)
+        ToolTip(self.run_button, "Start or stop the voice agent.\nMessage context will be cleared when stopping.")
         
         # Show message context button
         self.context_button = ctk.CTkButton(
@@ -199,6 +248,7 @@ class VoiceAgentApp:
             command=self.show_message_context
         )
         self.context_button.pack(side="left", padx=(0, 5), fill="x", expand=True)
+        ToolTip(self.context_button, "Show agent's message context (conversation history including the system prompt).")
         
         # Exit button
         self.exit_button = ctk.CTkButton(
