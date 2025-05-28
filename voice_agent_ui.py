@@ -222,7 +222,7 @@ class VoiceAgentApp:
     def create_widgets(self):
         # Main container frame
         main_frame = ctk.CTkFrame(self.root)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        main_frame.pack(fill="both", expand=True, padx=5, pady=5)  # Reduced padding
         
         # User input section
         user_label = ctk.CTkLabel(
@@ -230,14 +230,15 @@ class VoiceAgentApp:
             text="User Input", 
             font=("Arial", self.label_font_size, "bold")
         )
-        user_label.pack(pady=(5, 2))
+        user_label.pack(pady=(2, 0))  # Reduced padding
         
         self.user_input = ctk.CTkTextbox(
             main_frame,
             font=("Arial", self.textbox_font_size),
-            wrap="word"
+            wrap="word",
+            height=100  # Fixed height to ensure it fits
         )
-        self.user_input.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        self.user_input.pack(fill="x", padx=3, pady=1)  # Reduced padding, changed to fill="x"
         
         # Agent output section
         agent_label = ctk.CTkLabel(
@@ -245,67 +246,57 @@ class VoiceAgentApp:
             text="Agent Output", 
             font=("Arial", self.label_font_size, "bold")
         )
-        agent_label.pack(pady=(5, 2))
+        agent_label.pack(pady=(2, 0))  # Reduced padding
         
         self.agent_output = ctk.CTkTextbox(
             main_frame,
             font=("Arial", self.textbox_font_size),
-            wrap="word"
+            wrap="word",
+            height=100
         )
-        self.agent_output.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        self.agent_output.pack(fill="x", padx=3, pady=1)
         
         # Button frame
         button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(fill="x", pady=(5, 5))
-        
+        button_frame.pack(fill="x", pady=(2, 0), anchor="center")
+                
         # Run/Stop button
         self.run_button = ctk.CTkButton(
             button_frame,
-            text="Start new agent",
-            font=("Arial", self.button_font_size, "bold"),
-            height=40,
+            text="▶️",
             command=self.toggle_run
         )
-        self.run_button.pack(side="left", padx=(0, 5), fill="x", expand=True)
-        ToolTip(self.run_button, "Start or stop the voice agent.\nMessage context will be cleared when stopping.")
+        self.run_button.pack(side="left", padx=(0, 2))
+        ToolTip(self.run_button, "Start or stop the voice agent")
         
         # Mute button with microphone icon
         self.mute_button = ctk.CTkButton(
             button_frame,
             text="🎤",  # Microphone icon
-            font=("Arial", self.button_font_size * 1.5, "bold"),  # Larger font for icon
-            height=40,
-            width=60,  # Fixed width for icon button
-            fg_color="#ff9800",  # Orange color for mute button
-            hover_color="#ed8c00",  # Darker orange on hover
             command=self.toggle_mute
         )
-        self.mute_button.pack(side="left", padx=(0, 5), fill=None, expand=False)
-        # Initial tooltip
-        self.mute_tooltip = ToolTip(self.mute_button, "Click to mute microphone")
-        
+        self.mute_button.pack(side="left", padx=(2, 0))
+        self.mute_tooltip = ToolTip(self.mute_button, "Mute mic")
+                
         # Show message context button
         self.context_button = ctk.CTkButton(
             button_frame,
-            text="Show Message Context",
-            font=("Arial", self.button_font_size, "bold"),
-            height=40,
+            text="📋", # alt: "💬" "📋"
             command=self.show_message_context
         )
-        self.context_button.pack(side="left", padx=(0, 5), fill="x", expand=True)
-        ToolTip(self.context_button, "Show agent's message context (conversation history including the system prompt).")
+        self.context_button.pack(side="left", padx=(0, 2))
+        ToolTip(self.context_button, "Show conversation history")
         
         # Exit button
         self.exit_button = ctk.CTkButton(
             button_frame,
-            text="Exit",
-            font=("Arial", self.button_font_size, "bold"),
-            height=40,
+            text="⬅️",
             fg_color="#d32f2f",  # Red color for exit button
             hover_color="#b71c1c",  # Darker red on hover
             command=self.exit_application
         )
-        self.exit_button.pack(side="right", padx=(5, 0), fill="x", expand=True)
+        self.exit_button.pack(side="left", padx=(2, 0))
+        ToolTip(self.exit_button, "Shutdown and exit")
         
     def toggle_run(self):
         if not self.is_running:
@@ -321,8 +312,8 @@ class VoiceAgentApp:
             return
 
         self.is_running = True
-        self.run_button.configure(text="Terminate agent")
-        
+        self.run_button.configure(text="⏹️")
+
         # Reset mute state
         self.is_muted = False
         self.mute_button.configure(text="🎤", fg_color="#ff9800")
@@ -359,7 +350,7 @@ class VoiceAgentApp:
             self.agent_thread = None
 
             # Reset button states
-            self.run_button.configure(text="Start new agent")
+            self.run_button.configure(text="▶️")
             self.is_muted = False
             self.mute_button.configure(text="🎤", fg_color="#ff9800")
             self.mute_tooltip.update_text("Mute mic")
@@ -373,7 +364,7 @@ class VoiceAgentApp:
     
     def update_ui_after_stop(self):
         self.is_running = False
-        self.run_button.configure(text="Start new agent")
+        self.run_button.configure(text="▶️")
         
     def toggle_mute(self):
         """Toggle microphone mute status"""

@@ -27,7 +27,7 @@ def get_ui_argument_parser():
     parser = get_cli_argument_parser()
 
     # UI configuration arguments
-    parser.add_argument("--window_size", default="800x800", help="Window size in format WIDTHxHEIGHT")
+    parser.add_argument("--window_size", default="480x320", help="Window size in format WIDTHxHEIGHT")
     parser.add_argument("--fullscreen", action="store_true", default=False, help="Run in fullscreen mode")
     parser.add_argument("--label_font_size", type=int, default=18, help="Font size for labels")
     parser.add_argument("--textbox_font_size", type=int, default=24, help="Font size for textboxes")
