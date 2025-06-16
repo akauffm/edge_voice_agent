@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Voice Agent
+Comment=on dev
+Exec=start_voice_agent.sh
+Icon=/usr/share/pixmaps/python3.xpm
+Terminal=True
+Categories=Development;

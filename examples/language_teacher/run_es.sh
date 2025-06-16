@@ -1,4 +1,4 @@
-python voice_agent_ui.py \
+python ../../voice_agent_ui.py \
    --ollama_model_name gemma3:1b \
    --tts_model_path es_ES-carlfm-x_low.onnx  \
    --asr_model_name whisper_tiny \
