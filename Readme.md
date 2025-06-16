@@ -122,3 +122,9 @@ We use the phrase ```tell me a 100 word story about cats``` to trigger a LLM res
 | LLM inference speed (tokens/seconds) | ~63 tok/sec | ~13 tok/sec |
 | Time to first token (seconds) | ~0.16 sec | ~0.28 sec |
 | Time to first speech fragment (seconds) | ~0.7 sec  | ~1.2 sec |
+
+## Example on Raspberry Pi 5
+
+Running offline with above configuration (Moonshine ASR tiny, Gemma3:1b, Piper voice).
+
+[video](https://github.com/user-attachments/assets/486d4d48-36ff-455a-bca0-d230fe26dd0b)
