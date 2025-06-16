@@ -84,6 +84,7 @@ class LLmToAudio:
     def __init__(self, 
                  ollama_model_name="gemma3:1b", 
                  system_prompt=voice_agent_utils.DEFAULT_SYSTEM_PROMPT,
+                 start_message=voice_agent_utils.DEFAULT_START_MESSAGE,
                  tts_engine='piper',
                  speaking_rate=1.0, # higher numbers means faster
                  tts_model_path=None,
@@ -97,6 +98,7 @@ class LLmToAudio:
 
         ## Init LLM
         self.system_prompt = system_prompt
+        self.start_message = start_message
         self.messages = [
             {'role': 'system', 'content': self.system_prompt},
         ]
@@ -447,13 +449,16 @@ class LLmToAudio:
 class AudioToText:
     """Stream from audio and transcribe."""
 
-    def __init__(self, asr_model_name,
+    def __init__(self, asr_model_name, 
+                 language='en',
                  end_of_utterance_duration=0.5, 
-                 min_partial_duration=0.2, max_segment_duration=15,
+                 min_partial_duration=0.2,
+                 max_segment_duration=15,
                  verbose=False,
                 printer=None):
 
         self.verbose = verbose
+        self.language = language
         self.end_of_utterance_duration = end_of_utterance_duration
         
         self.min_partial_duration = min_partial_duration
@@ -477,7 +482,11 @@ class AudioToText:
 
         # Load models
         self.vad = captioning_utils.get_vad(eos_min_silence=200)    
-        self.asr_model = captioning_utils.load_asr_model(asr_model_name, 16000, False)
+        self.asr_model = captioning_utils.load_asr_model(
+            model_name=asr_model_name, 
+            language=self.language,
+            sampling_rate=16000, 
+            show_word_confidence_scores=False)
 
         # Transcription thread
         self.stop_event = threading.Event()
@@ -631,18 +640,33 @@ class VoiceAgent():
         self.output_handler = LLmToAudio(**llmToAudiOutputArgsKwargs)
     
     def start(self):
-        self.output_handler.start()
-        self.input_handler.start()
+        print("Starting voice agent...")
 
     def stop(self):
-        self.output_handler.stop()
         self.input_handler.stop()
+        self.output_handler.stop()        
 
     def shutdown(self):
         self.output_handler.shutdown()
         self.input_handler.shutdown()
 
     def run(self):
+
+        # start the output handler and open with start message
+        self.output_handler.start()
+
+        start_message = self.output_handler.start_message
+        self.output_handler._start_audio_stream()
+        self.output_handler.assistant_printer.start()
+        self.output_handler.assistant_printer.show_idle(start_message)
+        self.output_handler._speak_sentence(start_message)
+        self.output_handler._finish_processing()
+
+
+        # start the input handler only once we're done with the start message to
+        # avoid conflicts with audio streams
+        self.input_handler.start()         
+
         while True:
             if self.stop_event_set():
                 break
@@ -659,7 +683,6 @@ class VoiceAgent():
             else:
                 if self.stop_event_set():
                     break
-
                 self.output_handler.process_prompt(user_input_transcribed)     
 
     def trigger_stop_events(self):

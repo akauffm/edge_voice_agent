@@ -73,7 +73,7 @@
 
 * you can increase the speaking rate to make long responses not feel quite as length
 
-```python voice_agent.py --speaking_rate 3.0 --system_prompt "`cat cat_specialist.txt`" ```
+```python voice_agent.py --speaking_rate 3.0 --system_prompt "`cat examples/cat_specialist.txt`" ```
 
 ## Other models
 

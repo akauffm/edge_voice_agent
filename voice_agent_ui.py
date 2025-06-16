@@ -148,6 +148,9 @@ class VoiceAgentApp:
                  max_words_to_speak_start=5,
                  max_words_to_speak=20,
                  system_prompt=voice_agent_utils.DEFAULT_SYSTEM_PROMPT,
+                 start_message=voice_agent_utils.DEFAULT_START_MESSAGE,
+                 language=voice_agent_utils.DEFAULT_LANGUAGE,
+                 min_partial_duration=0.25,
                  end_of_utterance_duration=0.5,
                  verbose=False):
                  
@@ -160,6 +163,9 @@ class VoiceAgentApp:
         self.max_words_to_speak_start = max_words_to_speak_start
         self.max_words_to_speak = max_words_to_speak
         self.system_prompt = system_prompt
+        self.start_message = start_message
+        self.language = language
+        self.min_partial_duration = min_partial_duration
         self.end_of_utterance_duration = end_of_utterance_duration
         self.verbose = verbose
         
@@ -205,13 +211,14 @@ class VoiceAgentApp:
         self.voice_agent = VoiceAgent()
         
         # Create custom UI printers for input and output
-        self.user_printer = UITextPrinter(self.user_input, title=None, clear_on_start=False)
-        self.agent_printer = UITextPrinter(self.agent_output, title=None, clear_on_start=False)
+        self.user_printer = UITextPrinter(self.user_input, title=None, clear_on_start=True)
+        self.agent_printer = UITextPrinter(self.agent_output, title=None, clear_on_start=True)
         
         # Initialize the agent components
         self.voice_agent.init_LLmToAudioOutput(
             ollama_model_name=self.ollama_model_name,
             system_prompt=self.system_prompt,
+            start_message=self.start_message,
             tts_engine=self.tts_engine,
             speaking_rate=self.speaking_rate,
             tts_model_path=self.tts_model_path,
@@ -223,6 +230,7 @@ class VoiceAgentApp:
 
         self.voice_agent.init_AudioToText(
             asr_model_name=self.asr_model_name,
+            language=args.language,
             end_of_utterance_duration=self.end_of_utterance_duration,
             verbose=self.verbose,
             printer=self.user_printer
@@ -525,6 +533,9 @@ if __name__ == "__main__":
         max_words_to_speak_start=args.max_words_to_speak_start,
         max_words_to_speak=args.max_words_to_speak,
         system_prompt=args.system_prompt,
+        start_message=args.start_message,
+        language=args.language,
+        min_partial_duration=args.min_partial_duration,
         end_of_utterance_duration=args.end_of_utterance_duration,
         verbose=args.verbose
     )

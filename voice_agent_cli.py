@@ -90,6 +90,7 @@ def main():
     va.init_LLmToAudioOutput(
         ollama_model_name=args.ollama_model_name,
         system_prompt=args.system_prompt,
+        start_message=args.start_message,
         tts_engine=args.tts_engine,
         speaking_rate=args.speaking_rate,
         tts_model_path=args.tts_model_path,
@@ -98,9 +99,12 @@ def main():
         verbose=args.verbose
     )
 
+
     va.init_AudioToText(
         asr_model_name=args.asr_model_name,
-        end_of_utterance_duration=0.5, 
+        language=args.language,
+        min_partial_duration=args.min_partial_duration,
+        end_of_utterance_duration=args.end_of_utterance_duration,
         verbose=args.verbose
     )
     va.start()

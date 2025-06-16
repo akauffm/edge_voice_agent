@@ -1,4 +1,7 @@
 venv
 venv_tkinter
 __pycache__
+*onnx*
+drlove.txt
+performance.md
 TODOs.md
