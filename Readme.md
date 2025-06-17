@@ -1,19 +1,16 @@
 # Small Voice Agent running fully offline on edge devices
 
-* flexible wrt to ASR, LLM and TTS component, currently supported:
+* **Currently supports:**
    * ASR: Moonshine, FasterWhisper, Nemo FastConformer, Vosk
    * TTS: Piper, Kokoro
    * LLM: anything through Ollama
-* components chosen to work fully offline on-device, CPU only
-   * default setup can run on Raspberry Pi 5
-      * ASR: Moonshine tiny
-      * TTSL: Piper
-      * LLM: Gemma3:1b
+* **Default setup works fully offline on-device, CPU only (with ~1s total latency on Raspberry Pi 5):**
+   * ASR: Moonshine tiny
+   * TTS: Piper
+   * LLM: Gemma3:1b
 
 
 ## Installation
-
-### Core functionality
 
 * clone git repository
    * ```git clone https://github.com/akauffm/edge_voice_agent && cd edge_voice_agent```
@@ -41,62 +38,42 @@
    * ```pip install useful-moonshine-onnx@git+https://git@github.com/usefulsensors/moonshine.git#subdirectory=moonshine-onnx```
 
    * optionally install other models (mostly useful for testing, the defaults already installed are the fastest):
-
    * ```pip install "nemo_toolkit[asr]"```
    * ```pip install faster whisper```
 
 * basic Piper text-to-speech (TTS) is installed already and includes one voice
-   * to install other voices, 
-   * to use Kokoro,
+   * to install additional Piper voices, visit https://huggingface.co/rhasspy/piper-voices/tree/main and choose the appropriate language. Navigate to the folder of the desired voice and download the **ONNX** and **JSON** file for each into the edge_voice_agent folder. You can hear all the voices at https://rhasspy.github.io/piper-samples/. *Models are all available in medium quality, some also in low and high quality. Inference time is signifiantly faster in low quality.*
+   * to use Kokoro, take a look at [this](https://github.com/ktomanek/edge_tts_comparison/blob/main/download_kokoro_models.sh)
 
-
-#### Ollama
-
-* install ollama locally: https://ollama.com/download
-* then pull the model you want to use, eg: 
-
-```ollama pull gemma3:1b```
-
-* then install [ollama python library](https://github.com/ollama/ollama-python) 
-
-```pip install ollama```
+* install Ollama for your platform
+   * https://ollama.com/download
+   * from the command line, pull the model you want to use, eg: ```ollama pull gemma3:1b``` (Ollama models are stored in a folder called .ollama in your home directory. You can see which are installed with ```ollama list``` and can delete them using ```ollama rm [model name]```)
 
 * start ollama from its UI or on the command line in a new terminal window
+   * ```ollama serve```
 
-```ollama serve```
+### Phew! If you got this far, you're ready to actually run this bad boy
 
+## Run it!
 
+From the command line, try: ```python voice_agent_cli.py --system_prompt "Answer the user in one sentence. You're a technical expert who's very easily distracted. Answer in one jargon-filled sentence." \
+   --ollama_model_name "gemma3:1b" \
+   --start_message "I know all about the edge because I live on it! Ask me anything." \
+   --tts_model_path "en_US-ryan-low.onnx"\
+   --speaking_rate 1.5```
 
+### For the full list of available command line flags, run ```python voice_agent_cli.py -h``` 
 
+### End of utterance detection
 
-### CLI command line arguments
+```--end_of_utterance_duration 0.7``` determines when we consider the user input to be finished speaking. Slower speakers might need a higher value. ```0.7``` seems to be a good default
 
+### System prompt from text file
 
-## End of utterance detection
+If you have a really long prompt, you can pass it as a text file rather than on the command line:
+```python voice_agent_cli.py --speaking_rate 3.0 --system_prompt "`cat [path to text file with prompt]`" ```
 
-```--end_of_utterance_duration 0.7``` determines when we consider the user input to be finished. Adapt according to user's speaking patterns, slower speakers might need a higher value. ```0.7``` seems to be a good default
-
-## System prompt from text
-
-* you can increase the speaking rate to make long responses not feel quite as long
-
-```python voice_agent_cli.py --speaking_rate 3.0 --system_prompt "`cat examples/cat_specialist.txt`" ```
-
-## Other models
-
-* moonshine base seems to run fast enough on Raspberry Pi.
-* Gemma3:4b leads to significant improvement on conversation side, but is too slow on Raspberry Pi
-
-```python voice_agent_cli.py --asr_model_name moonshine_onnx_base --ollama_model_name gemma3:4b --speaking_rate 3.0```
-
-
-## Performance measurements
-
-### User Speech input
-
-See [here](https://github.com/ktomanek/captioning?tab=readme-ov-file#streaming-performance-comparison) for comparison on different ASR models in the streaming lib on various devices.
-
-### LLM Generation
+### LLM generation times
 
 Before audio output can be generated, the LLM needs to generate enough tokens to start synthesizing audio output.
 When running ```voice_agent_cli.py --verbose```, several performance metrics will be shown quantifying this latency.
