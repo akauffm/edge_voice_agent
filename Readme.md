@@ -1,4 +1,4 @@
-# Small Voice Agent running fully offline on edge devices
+# Tiny Local Voice Agent
 
 * **Currently supports:**
    * ASR: Moonshine, FasterWhisper, Nemo FastConformer, Vosk
@@ -62,7 +62,10 @@ From the command line, try: ```python voice_agent_cli.py --system_prompt "Answer
    --tts_model_path "en_US-ryan-low.onnx"\
    --speaking_rate 1.5```
 
-### For the full list of available command line flags, run ```python voice_agent_cli.py -h``` 
+## Command line flags
+
+***For the full list of available command line flags***
+   * run ```python voice_agent_cli.py -h``` 
 
 ### End of utterance detection
 
