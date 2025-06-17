@@ -15,20 +15,28 @@
 
 ### Core functionality
 
+* create a virtual environment and activate it
+   * ```python -m venv venv```
+   * ```source venv/bin/activate```
+
 * install dependencies
    * ```pip install -r requirements.txt```
-   * CLI should work on all environments
-   * the UI is based on tkinter (customtkinter), which should run seamlessly on Linux; on MacOs it might be necessary to download python from https://www.python.org/downloads/macos and use this python version instead of one installed by homebrew (ie, create your python environment with the newly installed version of python, which sould be found under eg ```/usr/local/bin/python3.12```)
-
-* download these two repos and install with ```pip install -e .``` each (also install their dependencies)
-   * https://github.com/ktomanek/captioning (install all ASR models you want to run, see instructions there)
-   * https://github.com/ktomanek/edge_tts_comparison
+   * ```git clone https://github.com/ktomanek/captioning``` 
+   * ```cd captioning```
+   * ```pip install -e .```
+   * ```cd ..```
+   * ```git clone https://github.com/ktomanek/edge_tts_comparison```
+   * ```cd edge_tts_comparison```
+   * ```pip install -e .```
+   * ```cd ..```
+   * ```pip install onnxruntime piper-phonemize-cross```
+   * ```git clone https://github.com/rhasspy/piper.git```
+   * ```cd piper/src/python_run/```
+   * ```rm requirements.txt```
+   * ```pip install .```
 
 * download sentence splitter: 
-   * ```python -c "import nltk; nltk.download('punkt_tab')``` or
-   * ```python -c "import ssl; import nltk; ssl._create_default_https_context = ssl._create_unverified_context; nltk.download('punkt_tab')"```
-
-* potentially install ```sudo apt install python3-tk```
+   * ```python -c "import nltk; nltk.download('punkt_tab')```
 
 
 ### Models
@@ -73,14 +81,14 @@
 
 * you can increase the speaking rate to make long responses not feel quite as length
 
-```python voice_agent.py --speaking_rate 3.0 --system_prompt "`cat examples/cat_specialist.txt`" ```
+```python voice_agent_cli.py --speaking_rate 3.0 --system_prompt "`cat examples/cat_specialist.txt`" ```
 
 ## Other models
 
 * moonshine base seems to run fast enough on Raspberry Pi.
 * Gemma3:4b leads to significant improvement on conversation side, but is too slow on Raspberry Pi
 
-```python voice_agent.py --asr_model_name moonshine_onnx_base --ollama_model_name gemma3:4b --speaking_rate 3.0```
+```python voice_agent_cli.py --asr_model_name moonshine_onnx_base --ollama_model_name gemma3:4b --speaking_rate 3.0```
 
 
 ## Performance measurements
